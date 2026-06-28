@@ -7,7 +7,7 @@ The single source of truth for implementation. Derived from a code-level teardow
 - **Markdown is canonical** (steal from basic-memory): the user's `.md` files in `corpus/` are the source of truth. The SQLite DB is a *derived, rebuildable index* — if it's lost, re-ingest from the markdown.
 - **Vector-first recall, light graph as a re-rank *assist* — never graph-primary.** Vector search finds things; a sparse entity-graph only *boosts* related results. Degrades gracefully: no graph → still full vector recall.
 - **Load everything while it fits.** The agent gets the *maximal* context that fits the budget; retrieval only kicks in when the corpus overflows.
-- **Local + $0.** Embeddings run locally (transformers.js). Only cost is ~a cent of Haiku tokens per synthesis (swappable for a local model).
+- **The librarian has its OWN model — independence is the point.** Embeddings run locally (transformers.js). For both *what to return* (selection) and *what to ingest*, the librarian calls its **own** Claude, separate from the host Claude — so memory decisions are a neutral, consistent gatekeeper, never biased by the caller's current task. The host asks; the librarian decides. Credential is the librarian's own: an **API key** (explicit prompt-cache control, simplest) OR its **own dedicated `claude -p`/Agent SDK OAuth session** (free via subscription). The requirement is *independence*, not the credential type.
 - **Read freely, write carefully.** Writes go through propose→confirm; the human is the reconciliation engine.
 
 ## Data model (SQLite + sqlite-vec)
@@ -26,9 +26,13 @@ No FTS table (memento dropped it; revisit only if exact-term recall proves weak)
 ## `get_context(query)` flow
 
 ```
-1. corpus fits token budget?  →  load ALL chunks → Haiku → answer        (true full context)
+1. corpus fits token budget?  →  load ALL chunks → librarian's OWN Haiku selects+synthesizes → answer + sources
 2. too big?                   →  embed query (local) → sqlite-vec cosine top-k*2
-                                 → 4-FACTOR RE-RANK → top-k → Haiku → answer + source files
+                                 → 4-FACTOR RE-RANK → top-k → librarian's OWN Haiku synthesizes → answer + sources
+
+The librarian's own Claude (NOT the host) decides relevance & phrasing — an independent, neutral
+gatekeeper, so the caller can't bias what it picks. Keep it warm: hold the corpus as a CACHED prefix
+and fire a STATELESS query each call (don't reuse one growing conversation — history would bloat).
 ```
 
 **4-factor re-rank** (the genuinely clever steal — adapt from memento's `scoring-utils.js`):
@@ -57,7 +61,7 @@ Append-only is the failure mode (corpus rot). Dedup + the confirm gate prevent i
 | Storage layer | **build** (~120 lines — schema is simple) |
 | 4-factor scoring | **build** (~80 lines — adapt memento) |
 | Graph-BFS scorer | **build** (~50 lines over `relations`) |
-| Synthesis | **build** — Haiku call (`claude-haiku-4-5-20251001`, SDK `@anthropic-ai/sdk`), load-all-if-fits else top-k |
+| Synthesis (read) | **build** — the librarian's OWN warm Haiku (own key, or own `claude -p`/Agent SDK OAuth session) selects + synthesizes; independent of the host |
 
 ## Enforcement (fire-and-forget — Claude Code hooks)
 
