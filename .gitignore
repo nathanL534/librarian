@@ -1,0 +1,37 @@
+# ============================================================================
+# SAFETY-CRITICAL .gitignore
+# ----------------------------------------------------------------------------
+# This repo is PUBLIC. It will eventually sit next to PRIVATE personal-context
+# documents on a local machine. The rules below make it structurally
+# impossible to commit private content, the vector DB, secrets, or the
+# embedding model. DO NOT loosen these. NEVER `git add -f` anything matched
+# here. A leak of private content is the worst possible outcome.
+# ============================================================================
+
+# --- Your private corpus (personal-context docs live here, never committed) ---
+corpus/
+
+# --- Vector / search databases (SQLite + sqlite-vec + FTS) ---
+*.db
+*.sqlite
+*.sqlite3
+.index/
+
+# --- Secrets ---
+.env
+.env.*
+
+# --- Dependencies ---
+node_modules/
+
+# --- Local embedding model weights (downloaded by transformers.js) ---
+models/
+
+# --- Any file explicitly marked private ---
+*.private.md
+
+# --- Build output ---
+dist/
+
+# --- macOS cruft ---
+.DS_Store
