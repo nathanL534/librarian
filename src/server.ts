@@ -27,8 +27,8 @@ import {
 
 import {
   getContextSmart,
+  injectSmart,
   proposeMemorySmart,
-  retrieveContextSmart,
 } from "./client.js";
 
 const server = new Server(
@@ -173,8 +173,8 @@ async function main(): Promise<void> {
     }
     if (prompt) {
       try {
-        // retrieve-only (no synthesis) → fast; stays silent when nothing matches
-        const ctx = await retrieveContextSmart(prompt);
+        // gated → the librarian's Haiku curates; stays silent when nothing matches
+        const ctx = await injectSmart(prompt);
         if (ctx.trim()) {
           console.log(`# Relevant personal context (librarian)\n\n${ctx}`);
         }

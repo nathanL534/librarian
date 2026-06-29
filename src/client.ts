@@ -80,22 +80,21 @@ export async function getContextSmart(query: string): Promise<string> {
 }
 
 /**
- * Cheap retrieve-only path for the auto-read hook: raw top-k context, NO
- * synthesis. Daemon when up (model hot → ~sub-second), else in-process.
+ * Auto-read hook path: relevance-gated, then the librarian's Haiku curates.
+ * Daemon when up (corpus + model hot), else in-process.
  */
-export async function retrieveContextSmart(query: string): Promise<string> {
+export async function injectSmart(query: string): Promise<string> {
   const config = loadConfig();
   if (existsSync(config.socketPath)) {
     try {
-      const r = await daemonPost(config.socketPath, "/retrieve", { query });
-      if (typeof r.context === "string") return r.context;
+      const r = await daemonPost(config.socketPath, "/inject", { query });
+      if (typeof r.answer === "string") return r.answer;
     } catch {
       /* fall through */
     }
   }
-  const { retrieveContext } = await import("./tools/retrieveContext.js");
-  const { context } = await retrieveContext(query);
-  return context;
+  const { injectContext } = await import("./tools/injectContext.js");
+  return injectContext(query);
 }
 
 export async function proposeMemorySmart(

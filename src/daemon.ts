@@ -22,8 +22,8 @@ import { embed } from "./embed.js";
 import { runtime } from "./runtime.js";
 import { ingest } from "./store/ingest.js";
 import { getContext } from "./tools/getContext.js";
+import { injectContext } from "./tools/injectContext.js";
 import { proposeMemory } from "./tools/proposeMemory.js";
-import { retrieveContext } from "./tools/retrieveContext.js";
 
 const REINGEST_DEBOUNCE_MS = 1500;
 const MAINTENANCE_INTERVAL_MS = 10 * 60 * 1000; // backstop re-ingest
@@ -96,7 +96,7 @@ export async function runDaemon(): Promise<void> {
     if (
       req.method === "POST" &&
       (req.url === "/get_context" ||
-        req.url === "/retrieve" ||
+        req.url === "/inject" ||
         req.url === "/propose_memory")
     ) {
       const url = req.url;
@@ -112,9 +112,9 @@ export async function runDaemon(): Promise<void> {
             };
             if (url === "/get_context") {
               send(200, { answer: await getContext(String(args.query ?? "")) });
-            } else if (url === "/retrieve") {
-              // cheap path (no LLM) — used by the auto-read hook
-              send(200, await retrieveContext(String(args.query ?? "")));
+            } else if (url === "/inject") {
+              // auto-read hook: gated, then the librarian's Haiku curates
+              send(200, { answer: await injectContext(String(args.query ?? "")) });
             } else {
               send(200, {
                 result: await proposeMemory(
