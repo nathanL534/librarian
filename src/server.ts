@@ -1,31 +1,23 @@
 #!/usr/bin/env node
 /**
- * librarian — a personal-context MCP server (STUBS ONLY).
+ * librarian — a personal-context MCP server.
  *
- * This is the MCP entry point. It exposes two tools over stdio that an MCP
- * client (e.g. Claude Desktop / Claude Code) can call. The real retrieval and
- * synthesis logic is intentionally NOT implemented here yet — these are stubs.
- * The real implementation will land later from a separate architecture
- * blueprint.
- *
- * Tools registered:
+ * Exposes two tools over stdio to an MCP host (Claude Code / Claude Desktop):
  *
  *   get_context(query)
- *     Answer a question using the user's private markdown corpus.
- *     Intended behavior: if the whole corpus fits the model's token budget,
- *     load all of it; otherwise hybrid-retrieve the top-k most relevant chunks
- *     (vector + keyword, RRF-fused), then synthesize an answer with Haiku.
+ *     Answer a question from the user's private markdown corpus. Loads the whole
+ *     corpus if it fits the token budget, else vector-retrieves the top-k chunks
+ *     (4-factor re-ranked) and synthesizes with the librarian's own Claude.
  *
- *   propose_memory(content)
- *     Propose a new note/memory to persist into the corpus.
- *     Intended behavior: dedup against existing notes -> show a diff ->
- *     on user confirmation, write a new .md file into corpus/ and re-ingest it.
+ *   propose_memory(content, confirm?)
+ *     Two-phase write. Without confirm: dedup-check + preview. With confirm:
+ *     write a new .md into corpus/ (superseding a near-identical note) + re-ingest.
  *
- * SAFETY: the corpus/, the vector DB, .env, and the embedding model are all
- * gitignored. Nothing in this server should ever write user content outside
- * the configured corpusPath.
+ * The bin also serves CLI subcommands: `librarian init` / `librarian uninstall`.
+ *
+ * SAFETY: corpus/, the index DB, .env, and the model cache are all gitignored.
+ * Nothing here writes user content outside the configured corpusPath.
  */
-
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -36,18 +28,9 @@ import {
 import { getContext } from "./tools/getContext.js";
 import { proposeMemory } from "./tools/proposeMemory.js";
 
-const NOT_IMPLEMENTED = "not implemented yet";
-
 const server = new Server(
-  {
-    name: "librarian",
-    version: "0.1.0",
-  },
-  {
-    capabilities: {
-      tools: {},
-    },
-  },
+  { name: "librarian", version: "0.1.0" },
+  { capabilities: { tools: {} } },
 );
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -55,9 +38,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "get_context",
       description:
-        "Answer a question from the user's private markdown corpus. " +
-        "Loads the whole corpus if it fits the token budget, otherwise " +
-        "hybrid-retrieves the top-k relevant chunks and synthesizes with Haiku.",
+        "Answer a question from the user's private markdown corpus. Loads the " +
+        "whole corpus if it fits the token budget, otherwise vector-retrieves " +
+        "the top-k relevant chunks (re-ranked by recency/popularity/importance) " +
+        "and synthesizes a grounded answer with sources.",
       inputSchema: {
         type: "object",
         properties: {
@@ -72,15 +56,20 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "propose_memory",
       description:
-        "Propose a new note to persist into the corpus. Dedups against " +
-        "existing notes, shows a diff, and on confirmation writes a new .md " +
-        "file and re-ingests it.",
+        "Persist a new note into the corpus. Call once with confirm omitted to " +
+        "get a dedup check + preview, then again with confirm:true to actually " +
+        "write it. Writes only ever go into the gitignored corpus/.",
       inputSchema: {
         type: "object",
         properties: {
           content: {
             type: "string",
             description: "The note/memory text to persist.",
+          },
+          confirm: {
+            type: "boolean",
+            description:
+              "false/omitted = preview only; true = write to corpus and re-ingest.",
           },
         },
         required: ["content"],
@@ -91,34 +80,93 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
-
-  // STUBS: each tool currently returns a "not implemented yet" message.
-  switch (name) {
-    case "get_context": {
-      const result = await getContext(String(args?.query ?? ""));
-      return { content: [{ type: "text", text: result ?? NOT_IMPLEMENTED }] };
+  try {
+    switch (name) {
+      case "get_context": {
+        const result = await getContext(String(args?.query ?? ""));
+        return { content: [{ type: "text", text: result }] };
+      }
+      case "propose_memory": {
+        const result = await proposeMemory(
+          String(args?.content ?? ""),
+          Boolean(args?.confirm),
+        );
+        return { content: [{ type: "text", text: result }] };
+      }
+      default:
+        return {
+          content: [{ type: "text", text: `Unknown tool: ${name}` }],
+          isError: true,
+        };
     }
-    case "propose_memory": {
-      const result = await proposeMemory(String(args?.content ?? ""));
-      return { content: [{ type: "text", text: result ?? NOT_IMPLEMENTED }] };
-    }
-    default:
-      return {
-        content: [{ type: "text", text: `Unknown tool: ${name}` }],
-        isError: true,
-      };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { content: [{ type: "text", text: `Error: ${msg}` }], isError: true };
   }
 });
 
-async function main(): Promise<void> {
+async function startServer(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  // eslint-disable-next-line no-console
-  console.error("librarian MCP server running on stdio (stub mode)");
+  console.error("librarian MCP server running on stdio");
+}
+
+function readStdin(): Promise<string> {
+  return new Promise((resolve) => {
+    let data = "";
+    if (process.stdin.isTTY) {
+      resolve("");
+      return;
+    }
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (c) => (data += c));
+    process.stdin.on("end", () => resolve(data));
+  });
+}
+
+async function main(): Promise<void> {
+  const sub = process.argv[2];
+
+  if (sub === "init" || sub === "uninstall") {
+    const { runInit, runUninstall } = await import("./commands/init.js");
+    await (sub === "init" ? runInit() : runUninstall());
+    return;
+  }
+
+  if (sub === "query") {
+    // CLI query path — also handy for testing the pipeline end-to-end.
+    const { getContext } = await import("./tools/getContext.js");
+    console.log(await getContext(process.argv.slice(3).join(" ")));
+    return;
+  }
+
+  if (sub === "inject") {
+    // Claude Code UserPromptSubmit hook: read the prompt from stdin JSON, print
+    // relevant context to stdout (the harness adds it to the model's context).
+    // Must NEVER block the prompt, so all failures are swallowed.
+    const input = await readStdin();
+    let prompt = input.trim();
+    try {
+      prompt = (JSON.parse(input) as { prompt?: string }).prompt ?? prompt;
+    } catch {
+      /* not JSON — use the raw text */
+    }
+    if (prompt) {
+      try {
+        const { getContext } = await import("./tools/getContext.js");
+        const ctx = await getContext(prompt);
+        console.log(`# Relevant personal context (librarian)\n\n${ctx}`);
+      } catch {
+        /* swallow — a librarian failure must not break the user's prompt */
+      }
+    }
+    return;
+  }
+
+  await startServer();
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
-  console.error("Fatal error starting librarian:", err);
+  console.error("Fatal error in librarian:", err);
   process.exit(1);
 });
