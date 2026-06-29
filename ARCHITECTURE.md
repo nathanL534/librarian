@@ -96,10 +96,20 @@ Hooks are run by the harness deterministically, so the model can't forget them. 
   - *Non-technical fire-and-forget:* auto-commit + automated LLM dedup/reconcile, corpus git-versioned for reversibility.
 - **Cost:** keep the extractor on Haiku, debounced/batched — don't fire a full agent every turn.
 
+## Warm daemon (the 24/7 process)
+
+The MCP server and hooks are short-lived — each would reload the ~460MB embed model on every spawn. The daemon fixes that: **one long-lived process holds the model + index hot** and serves requests over a **Unix-domain socket** (`~/.librarian/daemon.sock` — local-only, no TCP port; short home-dir path dodges the macOS 104-char UDS limit).
+
+- **Thin clients:** the MCP tools and the `inject` hook call a smart client (`client.ts`) that hits the daemon when it's up (instant — model already hot) and **falls back to in-process** when it's down (a stale socket just refuses → fallback). Nothing ever breaks.
+- **Stays fresh:** `fs.watch` on the corpus re-ingests on change (debounced 1.5s) + a 10-min backstop. The daemon sets `runtime.managedIngest`, so the tools skip their own per-request ingest → fast.
+- **Endpoints:** `GET /health`, `POST /get_context`, `POST /propose_memory`.
+- **Autostart:** `init --daemon` installs a macOS **launchd** LaunchAgent (`RunAtLoad` + `KeepAlive`, respawns on crash). Its `PATH` includes the `claude` bin dir so the OAuth synth path works under launchd's minimal env. `uninstall` unloads + removes it.
+- **Background maintenance** (staleness/dedup *proposals*) hangs off this same loop — currently just keeps the index fresh; LLM-based consolidation is the next increment.
+
 ## Install (`npx librarian init`)
 
 Deterministic, idempotent, reversible. Registers the MCP server in the user's Claude config; appends hooks to `settings.json` after **backing it up** (merge, don't overwrite); downloads the model; creates gitignored `corpus/`. Ships an `uninstall` that reverses it. Never runs as a side effect of scanning the repo.
 
 ## Build order
 
-`store/ingest` → `store/retrieve` (vector + re-rank) → `synthesize` → `tools/*` → `init` → hooks.
+`store/ingest` → `store/retrieve` (vector + re-rank) → `synthesize` → `tools/*` → `daemon` + `client` (warm process) → `init` (MCP + `--daemon` launchd + `--with-hooks`) → hooks.
