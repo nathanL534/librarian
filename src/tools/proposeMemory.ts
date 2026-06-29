@@ -14,6 +14,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig } from "../config.js";
 import { getDb, toFloat32 } from "../db.js";
+import { runtime } from "../runtime.js";
 import { ingest } from "../store/ingest.js";
 import { embed } from "../embed.js";
 
@@ -37,7 +38,8 @@ export async function proposeMemory(
 
   const config = loadConfig();
   const db = getDb(config);
-  await ingest(db, config); // dedup against the latest state
+  // Leading ingest keeps dedup fresh; the daemon already does this via fs.watch.
+  if (!runtime.managedIngest) await ingest(db, config);
 
   const [vec] = await embed(
     [text],

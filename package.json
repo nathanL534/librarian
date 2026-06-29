@@ -12,6 +12,7 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "start": "node dist/server.js",
+    "daemon": "node dist/server.js daemon",
     "probe": "node dist/probe.js"
   },
   "dependencies": {

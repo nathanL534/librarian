@@ -25,8 +25,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-import { getContext } from "./tools/getContext.js";
-import { proposeMemory } from "./tools/proposeMemory.js";
+import { getContextSmart, proposeMemorySmart } from "./client.js";
 
 const server = new Server(
   { name: "librarian", version: "0.1.0" },
@@ -83,11 +82,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     switch (name) {
       case "get_context": {
-        const result = await getContext(String(args?.query ?? ""));
+        const result = await getContextSmart(String(args?.query ?? ""));
         return { content: [{ type: "text", text: result }] };
       }
       case "propose_memory": {
-        const result = await proposeMemory(
+        const result = await proposeMemorySmart(
           String(args?.content ?? ""),
           Boolean(args?.confirm),
         );
@@ -133,17 +132,34 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (sub === "daemon") {
+    const { runDaemon } = await import("./daemon.js");
+    await runDaemon();
+    return; // runDaemon keeps the process alive
+  }
+
+  if (sub === "daemon-status") {
+    const { daemonHealth } = await import("./client.js");
+    const health = await daemonHealth();
+    if (health) {
+      console.log(`librarian daemon UP: ${JSON.stringify(health)}`);
+    } else {
+      console.log("librarian daemon is not running.");
+      process.exitCode = 1;
+    }
+    return;
+  }
+
   if (sub === "query") {
-    // CLI query path — also handy for testing the pipeline end-to-end.
-    const { getContext } = await import("./tools/getContext.js");
-    console.log(await getContext(process.argv.slice(3).join(" ")));
+    // CLI query path — uses the daemon if up, else in-process.
+    console.log(await getContextSmart(process.argv.slice(3).join(" ")));
     return;
   }
 
   if (sub === "inject") {
     // Claude Code UserPromptSubmit hook: read the prompt from stdin JSON, print
     // relevant context to stdout (the harness adds it to the model's context).
-    // Must NEVER block the prompt, so all failures are swallowed.
+    // Uses the warm daemon when up (instant); must NEVER block the prompt.
     const input = await readStdin();
     let prompt = input.trim();
     try {
@@ -153,8 +169,7 @@ async function main(): Promise<void> {
     }
     if (prompt) {
       try {
-        const { getContext } = await import("./tools/getContext.js");
-        const ctx = await getContext(prompt);
+        const ctx = await getContextSmart(prompt);
         console.log(`# Relevant personal context (librarian)\n\n${ctx}`);
       } catch {
         /* swallow — a librarian failure must not break the user's prompt */

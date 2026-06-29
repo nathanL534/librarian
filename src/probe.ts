@@ -8,6 +8,7 @@
  *   npm run build && node dist/probe.js --synth
  */
 import { rmSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Config } from "./config.js";
@@ -26,6 +27,9 @@ const config: Config = {
   embeddingModel: "Xenova/bge-small-en-v1.5",
   auth: "oauth",
   loadAllTokenBudget: 100_000,
+  runtimeDir: join(homedir(), ".librarian"),
+  socketPath: join(homedir(), ".librarian", "daemon.sock"),
+  pidPath: join(homedir(), ".librarian", "daemon.pid"),
 };
 
 interface Case {

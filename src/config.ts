@@ -6,6 +6,7 @@
  * NOT the cwd, because an MCP host may spawn this server from anywhere.
  */
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,6 +27,12 @@ export interface Config {
   auth: AuthMode;
   /** Below this estimated token count, load the whole corpus instead of retrieving. */
   loadAllTokenBudget: number;
+  /** Daemon runtime dir (~/.librarian) — short path, dodges the UDS length limit. */
+  runtimeDir: string;
+  /** Unix-domain socket the warm daemon listens on. */
+  socketPath: string;
+  /** File holding the running daemon's pid. */
+  pidPath: string;
 }
 
 /** dist/config.js -> packageRoot is one level up. */
@@ -61,6 +68,8 @@ export function loadConfig(): Config {
 
   // Index + model cache live next to the corpus; both are gitignored.
   const indexDir = resolve(corpusPath, "..", ".index");
+  // Daemon runtime files live in a short, stable home-dir path (UDS length limit).
+  const runtimeDir = join(homedir(), ".librarian");
 
   cached = {
     corpusPath,
@@ -70,6 +79,9 @@ export function loadConfig(): Config {
     embeddingModel: merged.embeddingModel,
     auth: (process.env.LIBRARIAN_AUTH as AuthMode | undefined) ?? merged.auth,
     loadAllTokenBudget: merged.loadAllTokenBudget,
+    runtimeDir,
+    socketPath: join(runtimeDir, "daemon.sock"),
+    pidPath: join(runtimeDir, "daemon.pid"),
   };
   return cached;
 }

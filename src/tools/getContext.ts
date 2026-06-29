@@ -8,6 +8,7 @@
  */
 import { loadConfig } from "../config.js";
 import { getDb } from "../db.js";
+import { runtime } from "../runtime.js";
 import { ingest } from "../store/ingest.js";
 import { retrieve } from "../store/retrieve.js";
 import { synthesize } from "../synthesize.js";
@@ -25,7 +26,7 @@ export async function getContext(query: string): Promise<string> {
 
   const config = loadConfig();
   const db = getDb(config);
-  await ingest(db, config);
+  if (!runtime.managedIngest) await ingest(db, config);
 
   const rows = db
     .prepare(
