@@ -90,7 +90,8 @@ export async function ingest(
             now,
             now,
           );
-          insertVec.run(Number(info.lastInsertRowid), toFloat32(vectors[i]));
+          // sqlite-vec's vec0 PK must be bound as a BigInt (integers-only check).
+          insertVec.run(BigInt(info.lastInsertRowid), toFloat32(vectors[i]));
           added++;
         });
       });
@@ -103,7 +104,7 @@ export async function ingest(
       const tx = db.transaction(() => {
         for (const r of stale) {
           deleteChunk.run(r.id);
-          deleteVec.run(r.id);
+          deleteVec.run(BigInt(r.id));
           removed++;
         }
       });
@@ -124,7 +125,7 @@ export async function ingest(
     const tx = db.transaction(() => {
       for (const { id } of ids) {
         deleteChunk.run(id);
-        deleteVec.run(id);
+        deleteVec.run(BigInt(id));
         removed++;
       }
     });

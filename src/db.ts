@@ -11,7 +11,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
-import sqliteVec from "sqlite-vec";
+import { load as loadSqliteVec } from "sqlite-vec";
 import type { Config } from "./config.js";
 
 export type DB = Database.Database;
@@ -23,8 +23,8 @@ export function getDb(config: Config): DB {
   mkdirSync(dirname(config.dbPath), { recursive: true });
   const db = new Database(config.dbPath);
   db.pragma("journal_mode = WAL");
-  // sqlite-vec's load() typings vary across the driver union; db is correct.
-  (sqliteVec.load as (d: unknown) => void)(db);
+  // sqlite-vec's load() Db type is its own union; better-sqlite3's db is valid.
+  (loadSqliteVec as (d: unknown) => void)(db);
   migrate(db);
   cached = db;
   return db;
