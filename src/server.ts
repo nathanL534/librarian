@@ -167,7 +167,14 @@ async function main(): Promise<void> {
     const input = await readStdin();
     let prompt = input.trim();
     try {
-      prompt = (JSON.parse(input) as { prompt?: string }).prompt ?? prompt;
+      // Field name has varied across Claude Code versions (prompt / user_input);
+      // accept any of them, else fall back to the raw stdin text.
+      const j = JSON.parse(input) as {
+        prompt?: string;
+        user_input?: string;
+        userInput?: string;
+      };
+      prompt = j.prompt ?? j.user_input ?? j.userInput ?? prompt;
     } catch {
       /* not JSON — use the raw text */
     }
