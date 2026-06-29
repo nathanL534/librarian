@@ -13,6 +13,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -31,6 +32,7 @@ function log(msg = ""): void {
 
 export async function runInit(): Promise<void> {
   const withHooks = process.argv.includes("--with-hooks");
+  const withDaemon = process.argv.includes("--daemon");
 
   // 1. config.json (absolute corpus path so the MCP host can spawn us anywhere)
   const configPath = join(PACKAGE_ROOT, "config.json");
@@ -53,7 +55,16 @@ export async function runInit(): Promise<void> {
   // 3. register the MCP server with Claude (user scope, idempotent)
   registerMcp();
 
-  // 4. hooks (opt-in)
+  // 4. daemon (opt-in) — the always-on warm process
+  if (withDaemon) {
+    installDaemon();
+  } else {
+    log("");
+    log("Daemon NOT installed. Re-run with --daemon for the 24/7 warm process");
+    log("(keeps the model hot so hooks are instant + runs background refresh).");
+  }
+
+  // 5. hooks (opt-in)
   if (withHooks) {
     wireHooks();
   } else {
@@ -76,6 +87,8 @@ export async function runUninstall(): Promise<void> {
     log("could not remove MCP server automatically (claude CLI not found?)");
   }
 
+  uninstallDaemon();
+
   const settingsPath = join(homedir(), ".claude", "settings.json");
   if (existsSync(settingsPath)) {
     copyFileSync(settingsPath, `${settingsPath}.bak-${Date.now()}`);
@@ -94,6 +107,84 @@ export async function runUninstall(): Promise<void> {
     }
   }
   log("Left your corpus and config.json in place (your data is never deleted).");
+}
+
+const PLIST_LABEL = "com.librarian.daemon";
+
+function plistPath(): string {
+  return join(homedir(), "Library", "LaunchAgents", `${PLIST_LABEL}.plist`);
+}
+
+function installDaemon(): void {
+  const runtimeDir = join(homedir(), ".librarian");
+  const logPath = join(runtimeDir, "daemon.log");
+  mkdirSync(runtimeDir, { recursive: true });
+  mkdirSync(dirname(plistPath()), { recursive: true });
+
+  // launchd runs with a minimal PATH; the OAuth synth path spawns `claude`, so
+  // make sure its directory (and the usual bin dirs) are on PATH.
+  let claudeDir = "/usr/local/bin";
+  try {
+    claudeDir = dirname(
+      execFileSync("which", ["claude"], { encoding: "utf8" }).trim(),
+    );
+  } catch {
+    /* fall back to defaults */
+  }
+  const pathEnv = `${claudeDir}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`;
+
+  const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>${PLIST_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${process.execPath}</string>
+    <string>${SERVER_ENTRY}</string>
+    <string>daemon</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>${pathEnv}</string></dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>${logPath}</string>
+  <key>StandardErrorPath</key><string>${logPath}</string>
+</dict>
+</plist>
+`;
+  writeFileSync(plistPath(), plist);
+  try {
+    execFileSync("launchctl", ["unload", plistPath()], { stdio: "ignore" });
+  } catch {
+    /* not loaded yet */
+  }
+  try {
+    execFileSync("launchctl", ["load", "-w", plistPath()], { stdio: "inherit" });
+    log(`installed + started the 24/7 daemon (logs: ${logPath})`);
+  } catch {
+    log("wrote launchd plist but `launchctl load` failed. Start it manually:");
+    log(`  launchctl load -w ${plistPath()}`);
+  }
+}
+
+function uninstallDaemon(): void {
+  const p = plistPath();
+  if (!existsSync(p)) {
+    log("no launchd daemon installed");
+    return;
+  }
+  try {
+    execFileSync("launchctl", ["unload", "-w", p], { stdio: "ignore" });
+  } catch {
+    /* already unloaded */
+  }
+  try {
+    rmSync(p);
+    log("removed launchd daemon");
+  } catch {
+    /* ignore */
+  }
 }
 
 function registerMcp(): void {
