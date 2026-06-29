@@ -20,6 +20,10 @@ corpus/
 # --- Secrets ---
 .env
 .env.*
+!.env.example
+
+# --- User-specific config written by `librarian init` (may hold absolute paths) ---
+config.json
 
 # --- Dependencies ---
 node_modules/
