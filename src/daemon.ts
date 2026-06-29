@@ -23,6 +23,7 @@ import { runtime } from "./runtime.js";
 import { ingest } from "./store/ingest.js";
 import { getContext } from "./tools/getContext.js";
 import { proposeMemory } from "./tools/proposeMemory.js";
+import { retrieveContext } from "./tools/retrieveContext.js";
 
 const REINGEST_DEBOUNCE_MS = 1500;
 const MAINTENANCE_INTERVAL_MS = 10 * 60 * 1000; // backstop re-ingest
@@ -94,8 +95,11 @@ export async function runDaemon(): Promise<void> {
 
     if (
       req.method === "POST" &&
-      (req.url === "/get_context" || req.url === "/propose_memory")
+      (req.url === "/get_context" ||
+        req.url === "/retrieve" ||
+        req.url === "/propose_memory")
     ) {
+      const url = req.url;
       let body = "";
       req.on("data", (c) => (body += c));
       req.on("end", () => {
@@ -106,8 +110,11 @@ export async function runDaemon(): Promise<void> {
               content?: string;
               confirm?: boolean;
             };
-            if (req.url === "/get_context") {
+            if (url === "/get_context") {
               send(200, { answer: await getContext(String(args.query ?? "")) });
+            } else if (url === "/retrieve") {
+              // cheap path (no LLM) — used by the auto-read hook
+              send(200, await retrieveContext(String(args.query ?? "")));
             } else {
               send(200, {
                 result: await proposeMemory(

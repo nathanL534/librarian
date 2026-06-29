@@ -25,7 +25,11 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-import { getContextSmart, proposeMemorySmart } from "./client.js";
+import {
+  getContextSmart,
+  proposeMemorySmart,
+  retrieveContextSmart,
+} from "./client.js";
 
 const server = new Server(
   { name: "librarian", version: "0.1.0" },
@@ -169,8 +173,11 @@ async function main(): Promise<void> {
     }
     if (prompt) {
       try {
-        const ctx = await getContextSmart(prompt);
-        console.log(`# Relevant personal context (librarian)\n\n${ctx}`);
+        // retrieve-only (no synthesis) → fast; stays silent when nothing matches
+        const ctx = await retrieveContextSmart(prompt);
+        if (ctx.trim()) {
+          console.log(`# Relevant personal context (librarian)\n\n${ctx}`);
+        }
       } catch {
         /* swallow — a librarian failure must not break the user's prompt */
       }
