@@ -3,22 +3,26 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A personal-context MCP librarian: local RAG over your own markdown, $0 embeddings, Haiku synthesis.",
+  "description": "A personal-context MCP librarian: local RAG over your own markdown, $0 embeddings, independent Haiku synthesis.",
   "license": "MIT",
   "bin": {
     "librarian": "dist/server.js"
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "start": "node dist/server.js",
+    "probe": "node dist/probe.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.68.0",
-    "@modelcontextprotocol/sdk": "^1.21.0",
-    "@xenova/transformers": "^2.17.2",
-    "sqlite-vec": "^0.1.7-alpha.2"
+    "@anthropic-ai/sdk": "^0.107.0",
+    "@huggingface/transformers": "^4.2.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sqlite3": "^11.8.0",
+    "sqlite-vec": "^0.1.9"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^22.10.0",
     "typescript": "^5.7.0"
   }
