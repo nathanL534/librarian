@@ -5,7 +5,7 @@ A local, private, **$0** personal-context **MCP server**.
 Agents call two tools:
 
 - **`get_context(query)`** — retrieve relevant context about you.
-- **`propose_memory(fact)`** — save new context.
+- **`propose_memory(content)`** — save new context.
 
 So you never re-feed the same documents into a chat again. Your markdown notes
 are the source of truth; a SQLite + `sqlite-vec` index is *derived* from them.
@@ -47,10 +47,8 @@ node dist/server.js init --daemon --with-hooks
 | `--daemon` | Installs the `launchd` daemon so the warm process autostarts 24/7. |
 | `--with-hooks` | Wires the auto-read + auto-write Claude Code hooks into `~/.claude/settings.json` — **after backing it up first**. |
 
-Then:
-
-4. **Start a fresh Claude session.** Global hooks are read at session start, so
-   they take effect in *new* sessions — not the one you ran `init` from.
+**Then start a fresh Claude session.** Global hooks are read at session start, so
+they take effect in *new* sessions — not the one you ran `init` from.
 
 ---
 
