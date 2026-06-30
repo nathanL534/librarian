@@ -180,11 +180,17 @@ async function main(): Promise<void> {
     }
     if (prompt) {
       try {
-        // gated → Haiku curates; hard deadline so the hook can NEVER stall a prompt
+        // gated → Haiku curates; hard deadline so the hook can NEVER stall a prompt.
+        // The timer MUST be cleared once the race settles, else its dangling
+        // handle keeps this one-shot process alive (and the prompt blocked) for
+        // the full timeout even after the answer is already on stdout.
+        let deadline: ReturnType<typeof setTimeout> | undefined;
         const ctx = await Promise.race([
           injectSmart(prompt),
-          new Promise<string>((r) => setTimeout(() => r(""), 24000)),
-        ]);
+          new Promise<string>((r) => {
+            deadline = setTimeout(() => r(""), 24000);
+          }),
+        ]).finally(() => clearTimeout(deadline));
         if (ctx.trim()) {
           console.log(`# Relevant personal context (librarian)\n\n${ctx}`);
         }
