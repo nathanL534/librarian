@@ -24,7 +24,13 @@ import { execFileSync } from "node:child_process";
 // dist/commands/init.js -> package root is two levels up.
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SERVER_ENTRY = join(PACKAGE_ROOT, "dist", "server.js");
-const HOOK_MARKER = "server.js inject"; // identifies the hook we own
+// Markers identifying the hooks we own. They must be substrings of the
+// JSON-stringified hook entry: the command is `node "<path>/server.js" <sub>`,
+// so after JSON-escaping the path's closing quote sits right before the
+// subcommand (`…server.js\" inject`). Matching on the escaped quote + subcommand
+// (`" inject` / `" capture`) is therefore both reliable and unique.
+const HOOK_MARKER = '" inject'; // UserPromptSubmit auto-read hook
+const HOOK_MARKER_STOP = '" capture'; // Stop auto-write hook
 
 function log(msg = ""): void {
   console.log(msg);
@@ -103,13 +109,25 @@ export async function runUninstall(): Promise<void> {
     copyFileSync(settingsPath, `${settingsPath}.bak-${Date.now()}`);
     try {
       const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as Settings;
+      let changed = false;
       const ups = settings.hooks?.UserPromptSubmit;
       if (Array.isArray(ups)) {
         settings.hooks!.UserPromptSubmit = ups.filter(
           (e) => !JSON.stringify(e).includes(HOOK_MARKER),
         );
-        writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+        changed = true;
         log("removed auto-read hook");
+      }
+      const stop = settings.hooks?.Stop;
+      if (Array.isArray(stop)) {
+        settings.hooks!.Stop = stop.filter(
+          (e) => !JSON.stringify(e).includes(HOOK_MARKER_STOP),
+        );
+        changed = true;
+        log("removed auto-write hook");
+      }
+      if (changed) {
+        writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
       }
     } catch {
       /* leave settings untouched on parse failure */
@@ -220,6 +238,7 @@ function registerMcp(): void {
 interface Settings {
   hooks?: {
     UserPromptSubmit?: unknown[];
+    Stop?: unknown[];
     [k: string]: unknown;
   };
   [k: string]: unknown;
@@ -240,15 +259,30 @@ function wireHooks(): void {
   }
   settings.hooks ??= {};
   const ups = (settings.hooks.UserPromptSubmit ??= []) as unknown[];
+  const stop = (settings.hooks.Stop ??= []) as unknown[];
 
+  // Auto-read: inject relevant context on every prompt (UserPromptSubmit).
   if (JSON.stringify(ups).includes(HOOK_MARKER)) {
     log("auto-read hook already present — left as-is");
-    return;
+  } else {
+    ups.push({
+      // quote the path so an install dir with spaces still tokenizes correctly
+      hooks: [{ type: "command", command: `node "${SERVER_ENTRY}" inject` }],
+    });
+    log("wired auto-read hook (UserPromptSubmit → inject)");
   }
-  ups.push({
-    // quote the path so an install dir with spaces still tokenizes correctly
-    hooks: [{ type: "command", command: `node "${SERVER_ENTRY}" inject` }],
-  });
+
+  // Auto-write: extract durable facts when a session ends (Stop) and queue them
+  // for review. Fires fast and never blocks shutdown (see server.ts `capture`).
+  if (JSON.stringify(stop).includes(HOOK_MARKER_STOP)) {
+    log("auto-write hook already present — left as-is");
+  } else {
+    stop.push({
+      hooks: [{ type: "command", command: `node "${SERVER_ENTRY}" capture` }],
+    });
+    log("wired auto-write hook (Stop → capture)");
+  }
+
   writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
-  log(`wired auto-read hook into ${settingsPath} (backup saved)`);
+  log(`updated ${settingsPath} (backup saved)`);
 }

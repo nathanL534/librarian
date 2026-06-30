@@ -105,6 +105,28 @@ export async function injectSmart(query: string): Promise<string> {
   return "";
 }
 
+/**
+ * Auto-write hook path: hand the finished session's transcript to the warm
+ * daemon for background fact-extraction. Fire-and-forget — the daemon replies
+ * 202 IMMEDIATELY and does the slow OAuth extraction in the background, so this
+ * returns fast and NEVER blocks session shutdown.
+ *
+ * DAEMON-ONLY (no in-process fallback): like inject, if the daemon is down we
+ * do nothing rather than load the ~460MB model + spawn `claude` in the one-shot
+ * Stop-hook process. Always resolves; never throws.
+ */
+export async function captureSmart(transcriptPath: string): Promise<void> {
+  const config = loadConfig();
+  if (!existsSync(config.socketPath)) return; // daemon down → silently skip
+  try {
+    await daemonPost(config.socketPath, "/capture", {
+      transcript_path: transcriptPath,
+    });
+  } catch {
+    /* daemon down/slow → swallow; the auto-write hook must never break shutdown */
+  }
+}
+
 export async function proposeMemorySmart(
   content: string,
   confirm: boolean,

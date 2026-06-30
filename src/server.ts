@@ -148,6 +148,14 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (sub === "review") {
+    // Show the auto-write review queue: facts captured into corpus/pending/
+    // (never retrieved) so the user can see what's pending + promote approved ones.
+    const { runReview } = await import("./commands/review.js");
+    await runReview();
+    return;
+  }
+
   if (sub === "daemon-status") {
     const { daemonHealth } = await import("./client.js");
     const health = await daemonHealth();
@@ -202,6 +210,42 @@ async function main(): Promise<void> {
         }
       } catch {
         /* swallow — a librarian failure must not break the user's prompt */
+      }
+    }
+    return;
+  }
+
+  if (sub === "capture") {
+    // Claude Code Stop hook: read the session info from stdin JSON, then
+    // fire-and-forget the transcript path to the warm daemon's /capture (which
+    // returns 202 instantly and extracts in the background). MUST exit 0 fast
+    // and NEVER do heavy work here — if the daemon is down, just exit silently.
+    const input = await readStdin();
+    let transcriptPath = "";
+    try {
+      const j = JSON.parse(input) as {
+        transcript_path?: string;
+        transcriptPath?: string;
+      };
+      transcriptPath = j.transcript_path ?? j.transcriptPath ?? "";
+    } catch {
+      /* not JSON — nothing to capture */
+    }
+    if (transcriptPath) {
+      try {
+        const { captureSmart } = await import("./client.js");
+        // Hard deadline so a hung daemon can never stall session shutdown. The
+        // timer MUST be cleared once the race settles, else its dangling handle
+        // keeps this one-shot process alive for the full timeout.
+        let deadline: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+          captureSmart(transcriptPath),
+          new Promise<void>((r) => {
+            deadline = setTimeout(() => r(), 3000);
+          }),
+        ]).finally(() => clearTimeout(deadline));
+      } catch {
+        /* swallow — the auto-write hook must never break session shutdown */
       }
     }
     return;

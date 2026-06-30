@@ -24,6 +24,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { loadConfig } from "./config.js";
+import { runCapture, disposeCapture } from "./capture.js";
 import { getDb } from "./db.js";
 import { embed } from "./embed.js";
 import { runtime } from "./runtime.js";
@@ -77,6 +78,7 @@ export async function runDaemon(): Promise<void> {
     inject: { fired: 0, silent: 0 },
     get_context: 0,
     propose_memory: 0,
+    capture: 0,
   };
 
   /**
@@ -89,6 +91,7 @@ export async function runDaemon(): Promise<void> {
     injected: boolean,
     latencyMs: number,
     sources: string[],
+    count?: number,
   ): void => {
     usage.total++;
     if (type === "inject") {
@@ -96,6 +99,8 @@ export async function runDaemon(): Promise<void> {
       else usage.inject.silent++;
     } else if (type === "get_context") {
       usage.get_context++;
+    } else if (type === "capture") {
+      usage.capture++;
     } else {
       usage.propose_memory++;
     }
@@ -106,6 +111,7 @@ export async function runDaemon(): Promise<void> {
       injected,
       latency_ms: latencyMs,
       sources,
+      count,
     });
   };
 
@@ -158,7 +164,55 @@ export async function runDaemon(): Promise<void> {
           inject: { ...usage.inject },
           get_context: usage.get_context,
           propose_memory: usage.propose_memory,
+          capture: usage.capture,
         },
+      });
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/capture") {
+      // Auto-write hook: reply IMMEDIATELY (202) so the Stop hook returns fast,
+      // then extract + dedup + queue in the BACKGROUND. Fire-and-forget; every
+      // error is swallowed so a bad transcript can never crash the daemon.
+      let body = "";
+      let tooBig = false;
+      req.on("data", (c) => {
+        if (tooBig) return;
+        body += c;
+        if (body.length > MAX_BODY_BYTES) {
+          tooBig = true;
+          send(413, { error: "request too large" });
+          req.destroy();
+        }
+      });
+      req.on("end", () => {
+        if (tooBig) return;
+        let transcriptPath = "";
+        try {
+          const args = JSON.parse(body || "{}") as {
+            transcript_path?: string;
+            transcriptPath?: string;
+          };
+          transcriptPath = args.transcript_path ?? args.transcriptPath ?? "";
+        } catch {
+          /* unparseable body → nothing to capture */
+        }
+        send(202, { accepted: true }); // never make the hook wait on extraction
+        if (!transcriptPath) return;
+        const t0 = Date.now();
+        void runCapture(transcriptPath, config)
+          .then(({ queued }) => {
+            record(
+              "capture",
+              transcriptPath,
+              queued.length > 0,
+              Date.now() - t0,
+              [],
+              queued.length,
+            );
+            log(`capture: queued ${queued.length} fact(s) from ${transcriptPath}`);
+          })
+          .catch((e) => log(`capture error: ${(e as Error).message}`));
       });
       return;
     }
@@ -254,7 +308,8 @@ export async function runDaemon(): Promise<void> {
     log("shutting down…");
     clearInterval(backstop);
     if (timer) clearTimeout(timer);
-    disposeSynthesizer(); // kill the warm `claude` session
+    disposeSynthesizer(); // kill the warm synthesis `claude` session
+    disposeCapture(); // kill the warm extraction `claude` session
     server.close();
     for (const p of [config.socketPath, config.pidPath]) {
       try {

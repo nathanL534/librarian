@@ -24,8 +24,14 @@ function listMarkdown(dir: string): string[] {
   for (const e of entries) {
     const full = join(dir, e.name);
     if (e.isDirectory()) {
-      // Skip dotdirs and the cold archive (searchable explicitly, not hot).
-      if (e.name.startsWith(".") || e.name === "archive") continue;
+      // Skip dotdirs, the cold archive (searchable explicitly, not hot), and the
+      // review queue (auto-captured facts stay un-retrieved until promoted).
+      if (
+        e.name.startsWith(".") ||
+        e.name === "archive" ||
+        e.name === "pending"
+      )
+        continue;
       out.push(...listMarkdown(full));
     } else if (e.isFile() && e.name.endsWith(".md")) {
       out.push(full);

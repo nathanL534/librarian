@@ -12,7 +12,11 @@
  */
 import { appendFileSync, readFileSync } from "node:fs";
 
-export type UsageType = "inject" | "get_context" | "propose_memory";
+export type UsageType =
+  | "inject"
+  | "get_context"
+  | "propose_memory"
+  | "capture";
 
 export interface UsageEntry {
   /** ISO timestamp, stamped when the request finished. */
@@ -23,11 +27,14 @@ export interface UsageEntry {
   /**
    * Did the librarian surface anything? For /inject this is THE signal: false
    * means the relevance gate stayed silent. For other types: answer non-empty.
+   * For "capture": true when ≥1 fact was queued to the review pile.
    */
   injected: boolean;
   latency_ms: number;
   /** Corpus files the answer drew on (empty when silent). */
   sources: string[];
+  /** Auto-write only: how many durable facts were queued to corpus/pending/. */
+  count?: number;
 }
 
 /** First-200-chars truncation used for the logged query (avoids fat lines). */
