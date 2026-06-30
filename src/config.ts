@@ -33,6 +33,8 @@ export interface Config {
   socketPath: string;
   /** File holding the running daemon's pid. */
   pidPath: string;
+  /** Append-only usage telemetry log (JSONL; one line per request). */
+  usagePath: string;
 }
 
 /** dist/config.js -> packageRoot is one level up. */
@@ -82,6 +84,7 @@ export function loadConfig(): Config {
     runtimeDir,
     socketPath: join(runtimeDir, "daemon.sock"),
     pidPath: join(runtimeDir, "daemon.pid"),
+    usagePath: join(runtimeDir, "usage.jsonl"),
   };
   return cached;
 }

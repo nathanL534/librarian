@@ -32,6 +32,12 @@ import { ingest } from "./store/ingest.js";
 import { getContext } from "./tools/getContext.js";
 import { injectContext } from "./tools/injectContext.js";
 import { proposeMemory } from "./tools/proposeMemory.js";
+import {
+  appendUsage,
+  clipQuery,
+  parseSources,
+  type UsageType,
+} from "./usage.js";
 
 const REINGEST_DEBOUNCE_MS = 1500;
 const MAINTENANCE_INTERVAL_MS = 10 * 60 * 1000; // backstop re-ingest
@@ -63,6 +69,45 @@ export async function runDaemon(): Promise<void> {
 
   const db = getDb(config);
   runtime.managedIngest = true; // we own ingest now; tools skip their own
+
+  // Live, in-memory usage counters (since this daemon started). Exposed on
+  // /health; the persistent picture lives in usage.jsonl (see record() below).
+  const usage = {
+    total: 0,
+    inject: { fired: 0, silent: 0 },
+    get_context: 0,
+    propose_memory: 0,
+  };
+
+  /**
+   * Bump the live counters and append a usage line. Called AFTER the response is
+   * sent, so telemetry never adds latency. Best-effort — appendUsage swallows.
+   */
+  const record = (
+    type: UsageType,
+    query: string,
+    injected: boolean,
+    latencyMs: number,
+    sources: string[],
+  ): void => {
+    usage.total++;
+    if (type === "inject") {
+      if (injected) usage.inject.fired++;
+      else usage.inject.silent++;
+    } else if (type === "get_context") {
+      usage.get_context++;
+    } else {
+      usage.propose_memory++;
+    }
+    appendUsage(config.usagePath, {
+      ts: new Date().toISOString(),
+      type,
+      query: clipQuery(query),
+      injected,
+      latency_ms: latencyMs,
+      sources,
+    });
+  };
 
   log("warming embedding model…");
   await embed(["warmup"], config.embeddingModel, config.modelCachePath);
@@ -108,6 +153,12 @@ export async function runDaemon(): Promise<void> {
         model: config.model,
         embeddingModel: config.embeddingModel,
         auth: config.auth,
+        usage: {
+          total: usage.total,
+          inject: { ...usage.inject },
+          get_context: usage.get_context,
+          propose_memory: usage.propose_memory,
+        },
       });
       return;
     }
@@ -139,18 +190,43 @@ export async function runDaemon(): Promise<void> {
               content?: string;
               confirm?: boolean;
             };
+            // Measure around the await; log AFTER send so telemetry adds no latency.
+            const t0 = Date.now();
             if (url === "/get_context") {
-              send(200, { answer: await getContext(String(args.query ?? "")) });
+              const query = String(args.query ?? "");
+              const answer = await getContext(query);
+              send(200, { answer });
+              record(
+                "get_context",
+                query,
+                answer.length > 0,
+                Date.now() - t0,
+                parseSources(answer),
+              );
             } else if (url === "/inject") {
               // auto-read hook: gated, then the librarian's Haiku curates
-              send(200, { answer: await injectContext(String(args.query ?? "")) });
+              const query = String(args.query ?? "");
+              const answer = await injectContext(query);
+              send(200, { answer });
+              // injected = the gate actually surfaced context (non-empty answer).
+              record(
+                "inject",
+                query,
+                answer.trim().length > 0,
+                Date.now() - t0,
+                parseSources(answer),
+              );
             } else {
-              send(200, {
-                result: await proposeMemory(
-                  String(args.content ?? ""),
-                  Boolean(args.confirm),
-                ),
-              });
+              const content = String(args.content ?? "");
+              const result = await proposeMemory(content, Boolean(args.confirm));
+              send(200, { result });
+              record(
+                "propose_memory",
+                content,
+                result.length > 0,
+                Date.now() - t0,
+                [],
+              );
             }
           } catch (e) {
             send(500, { error: (e as Error).message });

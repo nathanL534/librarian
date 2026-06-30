@@ -30,6 +30,7 @@ const config: Config = {
   runtimeDir: join(homedir(), ".librarian"),
   socketPath: join(homedir(), ".librarian", "daemon.sock"),
   pidPath: join(homedir(), ".librarian", "daemon.pid"),
+  usagePath: join(homedir(), ".librarian", "usage.jsonl"),
 };
 
 interface Case {

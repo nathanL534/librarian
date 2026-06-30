@@ -142,6 +142,12 @@ async function main(): Promise<void> {
     return; // runDaemon keeps the process alive
   }
 
+  if (sub === "stats") {
+    const { runStats } = await import("./commands/stats.js");
+    await runStats();
+    return;
+  }
+
   if (sub === "daemon-status") {
     const { daemonHealth } = await import("./client.js");
     const health = await daemonHealth();
