@@ -24,6 +24,21 @@ export function disposeSynthesizer(): void {
   persistent = null;
 }
 
+/**
+ * Spawn + warm the OAuth persistent `claude` session at daemon startup, so the
+ * FIRST real query doesn't pay the ~10s cold-spawn cost on top of synthesis
+ * (which would blow the per-query timeout). Best-effort: if it fails, the first
+ * query is just slower. No-op on the key path (no persistent process).
+ */
+export async function warmSynthesizer(config: Config): Promise<void> {
+  if (config.auth !== "oauth") return;
+  try {
+    await synthesize("Reply with: ready", "(warmup — no real context)", config);
+  } catch {
+    /* best-effort */
+  }
+}
+
 export async function synthesize(
   query: string,
   context: string,

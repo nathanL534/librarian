@@ -28,7 +28,7 @@ import { runCapture, disposeCapture } from "./capture.js";
 import { getDb } from "./db.js";
 import { embed } from "./embed.js";
 import { runtime } from "./runtime.js";
-import { disposeSynthesizer } from "./synthesize.js";
+import { disposeSynthesizer, warmSynthesizer } from "./synthesize.js";
 import { ingest } from "./store/ingest.js";
 import { getContext } from "./tools/getContext.js";
 import { injectContext } from "./tools/injectContext.js";
@@ -119,6 +119,12 @@ export async function runDaemon(): Promise<void> {
   await embed(["warmup"], config.embeddingModel, config.modelCachePath);
   const stats = await ingest(db, config);
   log(`indexed ${stats.files} file(s), ${stats.added} new chunk(s)`);
+
+  // Also warm the OAuth `claude` session so the FIRST query isn't cold (the cold
+  // spawn + synthesis would otherwise blow the per-query timeout).
+  log("warming synthesis session…");
+  await warmSynthesizer(config);
+  log("ready.");
 
   // Keep the index fresh on corpus changes (debounced) + a periodic backstop.
   let timer: NodeJS.Timeout | null = null;
