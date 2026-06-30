@@ -27,6 +27,7 @@ import { loadConfig } from "./config.js";
 import { getDb } from "./db.js";
 import { embed } from "./embed.js";
 import { runtime } from "./runtime.js";
+import { disposeSynthesizer } from "./synthesize.js";
 import { ingest } from "./store/ingest.js";
 import { getContext } from "./tools/getContext.js";
 import { injectContext } from "./tools/injectContext.js";
@@ -177,6 +178,7 @@ export async function runDaemon(): Promise<void> {
     log("shutting down…");
     clearInterval(backstop);
     if (timer) clearTimeout(timer);
+    disposeSynthesizer(); // kill the warm `claude` session
     server.close();
     for (const p of [config.socketPath, config.pidPath]) {
       try {

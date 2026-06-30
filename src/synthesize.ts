@@ -3,18 +3,26 @@
  *
  * Independent of whatever host agent invoked the tool: the librarian is the
  * neutral gatekeeper. Two auth modes (config.auth):
- *   - "oauth" (default): spawn `claude -p` — reuses the user's existing CLI
- *     login, no API key. Prompt caching is opaque but fine for a single user.
+ *   - "oauth" (default): a warm PERSISTENT `claude` session (reuses the user's
+ *     existing CLI login, no API key) — spawned once, reused per query.
  *   - "key": @anthropic-ai/sdk with explicit prompt caching on the context block.
  */
-import { spawn } from "node:child_process";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Config } from "./config.js";
+import { PersistentClaude } from "./persistentClaude.js";
 
 const SYSTEM_PROMPT =
   "You are the user's personal librarian. Answer the question using ONLY the " +
   "provided context from their private notes. Be concise and concrete. If the " +
   "context does not contain the answer, say so plainly — never invent facts.";
+
+let persistent: PersistentClaude | null = null;
+
+/** Tear down the warm OAuth session (called on daemon shutdown). */
+export function disposeSynthesizer(): void {
+  persistent?.dispose();
+  persistent = null;
+}
 
 export async function synthesize(
   query: string,
@@ -56,35 +64,8 @@ function synthesizeWithOAuth(
   context: string,
   config: Config,
 ): Promise<string> {
-  const prompt = `${SYSTEM_PROMPT}\n\nCONTEXT:\n${context}\n\nQUESTION: ${query}`;
-  return new Promise((resolve, reject) => {
-    const child = spawn(
-      "claude",
-      ["-p", "--model", config.model, "--output-format", "json"],
-      // Generous: OAuth `claude -p` legitimately takes 5-10s; this only kills a
-      // true hang, not slow-but-valid synthesis. (The key path is ~1-2s.)
-      { stdio: ["pipe", "pipe", "pipe"], timeout: 20000, killSignal: "SIGKILL" },
-    );
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (d: Buffer) => (stdout += d.toString()));
-    child.stderr.on("data", (d: Buffer) => (stderr += d.toString()));
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code !== 0) {
-        reject(
-          new Error(`claude -p exited ${code}: ${stderr.slice(0, 500)}`),
-        );
-        return;
-      }
-      try {
-        const parsed = JSON.parse(stdout) as { result?: string };
-        resolve((parsed.result ?? "").trim());
-      } catch {
-        resolve(stdout.trim()); // tolerate non-JSON output
-      }
-    });
-    child.stdin.write(prompt);
-    child.stdin.end();
-  });
+  // Reuse one warm `claude` session: the system prompt is set once at spawn,
+  // each query carries its own retrieved context. No per-call CLI startup.
+  if (!persistent) persistent = new PersistentClaude(config.model, SYSTEM_PROMPT);
+  return persistent.query(`CONTEXT:\n${context}\n\nQUESTION: ${query}`);
 }
