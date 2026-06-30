@@ -10,6 +10,9 @@ import { existsSync } from "node:fs";
 import { request } from "node:http";
 import { loadConfig } from "./config.js";
 
+// Must exceed a normal synthesis (OAuth ~5-10s); only catches a hung daemon.
+const DAEMON_TIMEOUT_MS = 22000;
+
 function daemonPost(
   socketPath: string,
   path: string,
@@ -22,6 +25,7 @@ function daemonPost(
         socketPath,
         path,
         method: "POST",
+        timeout: DAEMON_TIMEOUT_MS,
         headers: {
           "content-type": "application/json",
           "content-length": Buffer.byteLength(payload),
@@ -39,6 +43,8 @@ function daemonPost(
         });
       },
     );
+    // A hung daemon must not stall the caller (the hook fires on every prompt).
+    req.on("timeout", () => req.destroy(new Error("daemon timeout")));
     req.on("error", reject);
     req.write(payload);
     req.end();
@@ -81,20 +87,22 @@ export async function getContextSmart(query: string): Promise<string> {
 
 /**
  * Auto-read hook path: relevance-gated, then the librarian's Haiku curates.
- * Daemon when up (corpus + model hot), else in-process.
+ *
+ * DAEMON-ONLY (no in-process fallback). The hook fires on every prompt, so if
+ * the daemon is down we stay SILENT rather than load the ~460MB model in-process
+ * (which would add seconds to every prompt). The deliberate get_context tool
+ * still falls back in-process — only this global, per-prompt path is daemon-gated.
  */
 export async function injectSmart(query: string): Promise<string> {
   const config = loadConfig();
-  if (existsSync(config.socketPath)) {
-    try {
-      const r = await daemonPost(config.socketPath, "/inject", { query });
-      if (typeof r.answer === "string") return r.answer;
-    } catch {
-      /* fall through */
-    }
+  if (!existsSync(config.socketPath)) return "";
+  try {
+    const r = await daemonPost(config.socketPath, "/inject", { query });
+    if (typeof r.answer === "string") return r.answer;
+  } catch {
+    /* daemon down/slow → stay silent */
   }
-  const { injectContext } = await import("./tools/injectContext.js");
-  return injectContext(query);
+  return "";
 }
 
 export async function proposeMemorySmart(

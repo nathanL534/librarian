@@ -180,8 +180,11 @@ async function main(): Promise<void> {
     }
     if (prompt) {
       try {
-        // gated → the librarian's Haiku curates; stays silent when nothing matches
-        const ctx = await injectSmart(prompt);
+        // gated → Haiku curates; hard deadline so the hook can NEVER stall a prompt
+        const ctx = await Promise.race([
+          injectSmart(prompt),
+          new Promise<string>((r) => setTimeout(() => r(""), 24000)),
+        ]);
         if (ctx.trim()) {
           console.log(`# Relevant personal context (librarian)\n\n${ctx}`);
         }

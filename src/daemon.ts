@@ -15,7 +15,14 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
-import { existsSync, mkdirSync, unlinkSync, watch, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  unlinkSync,
+  watch,
+  writeFileSync,
+} from "node:fs";
 import { loadConfig } from "./config.js";
 import { getDb } from "./db.js";
 import { embed } from "./embed.js";
@@ -27,6 +34,7 @@ import { proposeMemory } from "./tools/proposeMemory.js";
 
 const REINGEST_DEBOUNCE_MS = 1500;
 const MAINTENANCE_INTERVAL_MS = 10 * 60 * 1000; // backstop re-ingest
+const MAX_BODY_BYTES = 1_000_000; // reject oversized requests (local DoS guard)
 
 function log(msg: string): void {
   console.error(`[librarian-daemon] ${new Date().toISOString()} ${msg}`);
@@ -36,6 +44,12 @@ export async function runDaemon(): Promise<void> {
   const config = loadConfig();
   const startedAt = Date.now();
   mkdirSync(config.runtimeDir, { recursive: true });
+  // Restrict the runtime dir to this user (socket/pid/log live here).
+  try {
+    chmodSync(config.runtimeDir, 0o700);
+  } catch {
+    /* best-effort */
+  }
 
   // Clear a stale socket from a previous crash so listen() can bind.
   if (existsSync(config.socketPath)) {
@@ -72,7 +86,11 @@ export async function runDaemon(): Promise<void> {
   }, MAINTENANCE_INTERVAL_MS);
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+    // A client that aborts mid-write (e.g. after a 413) must NOT crash the daemon.
+    req.on("error", () => undefined);
+    res.on("error", () => undefined);
     const send = (code: number, obj: unknown): void => {
+      if (res.writableEnded) return;
       res.writeHead(code, { "content-type": "application/json" });
       res.end(JSON.stringify(obj));
     };
@@ -101,8 +119,18 @@ export async function runDaemon(): Promise<void> {
     ) {
       const url = req.url;
       let body = "";
-      req.on("data", (c) => (body += c));
+      let tooBig = false;
+      req.on("data", (c) => {
+        if (tooBig) return;
+        body += c;
+        if (body.length > MAX_BODY_BYTES) {
+          tooBig = true;
+          send(413, { error: "request too large" });
+          req.destroy();
+        }
+      });
       req.on("end", () => {
+        if (tooBig) return;
         void (async () => {
           try {
             const args = JSON.parse(body || "{}") as {
@@ -135,6 +163,12 @@ export async function runDaemon(): Promise<void> {
   });
 
   server.listen(config.socketPath, () => {
+    // Restrict the socket to this user — no other local account can connect.
+    try {
+      chmodSync(config.socketPath, 0o600);
+    } catch {
+      /* best-effort */
+    }
     writeFileSync(config.pidPath, String(process.pid));
     log(`listening on ${config.socketPath} (pid ${process.pid})`);
   });

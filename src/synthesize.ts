@@ -61,7 +61,9 @@ function synthesizeWithOAuth(
     const child = spawn(
       "claude",
       ["-p", "--model", config.model, "--output-format", "json"],
-      { stdio: ["pipe", "pipe", "pipe"] },
+      // Generous: OAuth `claude -p` legitimately takes 5-10s; this only kills a
+      // true hang, not slow-but-valid synthesis. (The key path is ~1-2s.)
+      { stdio: ["pipe", "pipe", "pipe"], timeout: 20000, killSignal: "SIGKILL" },
     );
     let stdout = "";
     let stderr = "";
