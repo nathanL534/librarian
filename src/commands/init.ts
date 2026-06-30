@@ -30,6 +30,15 @@ function log(msg = ""): void {
   console.log(msg);
 }
 
+function xmlEscape(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
 export async function runInit(): Promise<void> {
   const withHooks = process.argv.includes("--with-hooks");
   const withDaemon = process.argv.includes("--daemon");
@@ -137,19 +146,19 @@ function installDaemon(): void {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>${PLIST_LABEL}</string>
+  <key>Label</key><string>${xmlEscape(PLIST_LABEL)}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${process.execPath}</string>
-    <string>${SERVER_ENTRY}</string>
+    <string>${xmlEscape(process.execPath)}</string>
+    <string>${xmlEscape(SERVER_ENTRY)}</string>
     <string>daemon</string>
   </array>
   <key>EnvironmentVariables</key>
-  <dict><key>PATH</key><string>${pathEnv}</string></dict>
+  <dict><key>PATH</key><string>${xmlEscape(pathEnv)}</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>${logPath}</string>
-  <key>StandardErrorPath</key><string>${logPath}</string>
+  <key>StandardOutPath</key><string>${xmlEscape(logPath)}</string>
+  <key>StandardErrorPath</key><string>${xmlEscape(logPath)}</string>
 </dict>
 </plist>
 `;
@@ -237,7 +246,8 @@ function wireHooks(): void {
     return;
   }
   ups.push({
-    hooks: [{ type: "command", command: `node ${SERVER_ENTRY} inject` }],
+    // quote the path so an install dir with spaces still tokenizes correctly
+    hooks: [{ type: "command", command: `node "${SERVER_ENTRY}" inject` }],
   });
   writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
   log(`wired auto-read hook into ${settingsPath} (backup saved)`);

@@ -34,6 +34,10 @@ models/
 # --- Any file explicitly marked private ---
 *.private.md
 
+# --- Local Claude Code settings (may hold local paths/permissions) ---
+.claude/settings.local.json
+.claude/*.local.json
+
 # --- Build output ---
 dist/
 
