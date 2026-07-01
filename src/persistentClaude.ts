@@ -78,6 +78,10 @@ export class PersistentClaude {
     child.stderr?.on("data", (d: Buffer) => {
       this.stderr = (this.stderr + d.toString()).slice(-STDERR_KEEP);
     });
+    // Writing to stdin after `claude` has exited emits an async EPIPE 'error';
+    // without a listener that crashes the whole daemon. Swallow it — the turn
+    // fails cleanly via the close/timeout path instead.
+    child.stdin?.on("error", () => undefined);
     child.on("error", (e) => this.teardown(e));
     child.on("close", () =>
       this.teardown(
