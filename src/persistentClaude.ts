@@ -68,7 +68,12 @@ export class PersistentClaude {
         "--verbose",
         "--append-system-prompt", this.systemPrompt,
       ],
-      { stdio: ["pipe", "pipe", "pipe"] },
+      {
+        stdio: ["pipe", "pipe", "pipe"],
+        // Tag our OWN claude session so its inject/capture hooks skip themselves
+        // (else the librarian's synthesis triggers its own hooks → feedback loop).
+        env: { ...process.env, LIBRARIAN_INTERNAL: "1" },
+      },
     );
     this.child = child;
     this.stderr = "";

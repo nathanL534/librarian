@@ -174,6 +174,16 @@ async function main(): Promise<void> {
     return;
   }
 
+  // Loop-breaker: the librarian's OWN claude subprocesses run with
+  // LIBRARIAN_INTERNAL=1, and their inject/capture hooks inherit it. Skip them —
+  // else the librarian's synthesis/extraction triggers its own hooks recursively.
+  if (
+    (sub === "inject" || sub === "capture") &&
+    process.env.LIBRARIAN_INTERNAL === "1"
+  ) {
+    return;
+  }
+
   if (sub === "inject") {
     // Claude Code UserPromptSubmit hook: read the prompt from stdin JSON, print
     // relevant context to stdout (the harness adds it to the model's context).
