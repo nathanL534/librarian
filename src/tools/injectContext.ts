@@ -1,22 +1,29 @@
 /**
- * injectContext — the auto-read hook's path: the librarian's Haiku CURATES.
+ * injectContext — the auto-read hook's path: SURFACE relevant facts, don't answer.
  *
  * Requirement: the librarian (its OWN Haiku), not the host Claude, decides what
- * context to surface — the host receives the librarian's synthesized answer,
- * never raw chunks it picks from itself. So the hook runs the SAME librarian
- * logic as the deliberate get_context tool (load-all-if-fits → Haiku synthesis).
- * Two Claudes talking.
- *
- * To avoid paying for Haiku on every unrelated prompt (the hook is global), a
- * cheap deterministic relevance gate runs FIRST (vector similarity, ~10ms): if
- * nothing in the corpus is relevant, we stay silent WITHOUT waking Haiku. Haiku
- * fires only when there's genuinely something for the librarian to say.
+ * to surface. But it must GROUND strictly — the failure mode is confabulation
+ * (inventing a scenario/answer when the corpus has nothing). So instead of
+ * "answer the prompt from the corpus" (which invites invention), we ask it to
+ * surface ONLY facts literally in the retrieved notes, or reply NONE → inject
+ * nothing. Grounds on the gated top-k chunks, never load-all.
  */
-import { getContext } from "./getContext.js";
+import { loadConfig } from "../config.js";
+import { synthesize } from "../synthesize.js";
 import { retrieveContext } from "./retrieveContext.js";
 
 export async function injectContext(prompt: string): Promise<string> {
-  const { context } = await retrieveContext(prompt); // gate only — cheap
-  if (!context) return ""; // nothing relevant → don't wake Haiku, stay silent
-  return getContext(prompt); // librarian's Haiku curates (same path as the tool)
+  const { context, sources } = await retrieveContext(prompt); // gate + relevant chunks
+  if (!context) return ""; // nothing passed the relevance gate → stay silent
+
+  const config = loadConfig();
+  const framed =
+    "From the NOTES above, surface ONLY the facts that are directly relevant to " +
+    "the user's current prompt. Do NOT answer the prompt, give advice, or add " +
+    "anything not literally in the notes. Terse bullets. If nothing in the notes " +
+    `is relevant, reply with exactly: NONE\n\nUser's current prompt: ${prompt}`;
+
+  const out = (await synthesize(framed, context, config)).trim();
+  if (!out || /^none\b/i.test(out)) return ""; // nothing grounded → inject nothing
+  return `${out}\n\n— sources: ${[...new Set(sources)].join(", ")}`;
 }
