@@ -23,8 +23,11 @@ export interface RawContext {
   sources: string[];
 }
 
-// bge-small cosine: ~0.5+ for an on-topic match, ~0.2-0.3 for unrelated prompts.
-const MIN_RELEVANCE = 0.4;
+// bge-small cosine: genuine personal-context questions score ~0.55-0.73; unrelated
+// prompts (other projects, generic coding) land lower and MUST stay silent. 0.4 was
+// far too loose (95% fire-rate → injecting on everything + confabulating). 0.55 only
+// fires when a chunk is genuinely on-topic. Tune up if it still fires on noise.
+const MIN_RELEVANCE = 0.55;
 
 export async function retrieveContext(query: string, k = 5): Promise<RawContext> {
   if (!query.trim()) return { context: "", sources: [] };
