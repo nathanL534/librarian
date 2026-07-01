@@ -49,6 +49,12 @@ function log(msg: string): void {
 }
 
 export async function runDaemon(): Promise<void> {
+  // Tag every `claude` this daemon spawns (synthesis + capture) so their
+  // inject/capture hooks skip themselves — breaks the hook feedback loop.
+  // Set on our own env (not per-spawn) so the child inherits the FULL launchd
+  // environment plus the tag.
+  process.env.LIBRARIAN_INTERNAL = "1";
+
   const config = loadConfig();
   const startedAt = Date.now();
   mkdirSync(config.runtimeDir, { recursive: true });

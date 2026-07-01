@@ -158,7 +158,19 @@ function installDaemon(): void {
   } catch {
     /* fall back to defaults */
   }
-  const pathEnv = `${claudeDir}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`;
+  // Bake the FULL user PATH in — the `claude` on PATH is often a wrapper (e.g.
+  // cmux) that searches PATH for the REAL claude binary, which lives in a
+  // version-managed dir (~/.local/bin, nvm, bun…) that a hardcoded list misses.
+  const pathEnv = [
+    process.env.PATH,
+    claudeDir,
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+  ]
+    .filter(Boolean)
+    .join(":");
 
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

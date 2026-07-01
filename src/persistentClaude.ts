@@ -68,12 +68,11 @@ export class PersistentClaude {
         "--verbose",
         "--append-system-prompt", this.systemPrompt,
       ],
-      {
-        stdio: ["pipe", "pipe", "pipe"],
-        // Tag our OWN claude session so its inject/capture hooks skip themselves
-        // (else the librarian's synthesis triggers its own hooks → feedback loop).
-        env: { ...process.env, LIBRARIAN_INTERNAL: "1" },
-      },
+      // INHERIT the full parent env (do NOT pass a reconstructed `env` — under
+      // launchd that drops app/launchd vars the `claude` wrapper needs). The
+      // LIBRARIAN_INTERNAL tag is set on the daemon's own process.env instead,
+      // so it rides along on inheritance and the child's hooks skip themselves.
+      { stdio: ["pipe", "pipe", "pipe"] },
     );
     this.child = child;
     this.stderr = "";
