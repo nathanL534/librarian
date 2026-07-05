@@ -265,6 +265,9 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
+  if (process.argv[2] === "inject" || process.argv[2] === "capture") {
+    process.exit(0);
+  }
   console.error("Fatal error in librarian:", err);
   process.exit(1);
 });

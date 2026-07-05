@@ -46,8 +46,12 @@ function daemonPost(
     // A hung daemon must not stall the caller (the hook fires on every prompt).
     req.on("timeout", () => req.destroy(new Error("daemon timeout")));
     req.on("error", reject);
-    req.write(payload);
-    req.end();
+    try {
+      req.write(payload);
+      req.end();
+    } catch (err) {
+      reject(err);
+    }
   });
 }
 
