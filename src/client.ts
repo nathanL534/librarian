@@ -12,20 +12,36 @@ import { loadConfig } from "./config.js";
 
 // Must exceed a normal synthesis (OAuth ~5-10s); only catches a hung daemon.
 const DAEMON_TIMEOUT_MS = 22000;
+// Hook calls must degrade invisibly instead of holding Claude Code hostage when
+// the daemon socket accepts slowly or the daemon is saturated.
+const HOOK_INJECT_TIMEOUT_MS = 2500;
+const HOOK_CAPTURE_TIMEOUT_MS = 750;
 
 function daemonPost(
   socketPath: string,
   path: string,
   body: unknown,
+  timeoutMs = DAEMON_TIMEOUT_MS,
 ): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const settleResolve = (value: Record<string, unknown>): void => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const settleReject = (err: unknown): void => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
     const payload = JSON.stringify(body ?? {});
     const req = request(
       {
         socketPath,
         path,
         method: "POST",
-        timeout: DAEMON_TIMEOUT_MS,
+        timeout: timeoutMs,
         headers: {
           "content-type": "application/json",
           "content-length": Buffer.byteLength(payload),
@@ -36,21 +52,22 @@ function daemonPost(
         res.on("data", (c) => (data += c));
         res.on("end", () => {
           try {
-            resolve(JSON.parse(data || "{}") as Record<string, unknown>);
+            settleResolve(JSON.parse(data || "{}") as Record<string, unknown>);
           } catch {
-            reject(new Error("bad daemon response"));
+            settleReject(new Error("bad daemon response"));
           }
         });
       },
     );
     // A hung daemon must not stall the caller (the hook fires on every prompt).
     req.on("timeout", () => req.destroy(new Error("daemon timeout")));
-    req.on("error", reject);
+    req.on("error", settleReject);
     try {
       req.write(payload);
       req.end();
     } catch (err) {
-      reject(err);
+      settleReject(err);
+      req.destroy();
     }
   });
 }
@@ -101,7 +118,12 @@ export async function injectSmart(query: string): Promise<string> {
   const config = loadConfig();
   if (!existsSync(config.socketPath)) return "";
   try {
-    const r = await daemonPost(config.socketPath, "/inject", { query });
+    const r = await daemonPost(
+      config.socketPath,
+      "/inject",
+      { query },
+      HOOK_INJECT_TIMEOUT_MS,
+    );
     if (typeof r.answer === "string") return r.answer;
   } catch {
     /* daemon down/slow → stay silent */
@@ -123,9 +145,14 @@ export async function captureSmart(transcriptPath: string): Promise<void> {
   const config = loadConfig();
   if (!existsSync(config.socketPath)) return; // daemon down → silently skip
   try {
-    await daemonPost(config.socketPath, "/capture", {
-      transcript_path: transcriptPath,
-    });
+    await daemonPost(
+      config.socketPath,
+      "/capture",
+      {
+        transcript_path: transcriptPath,
+      },
+      HOOK_CAPTURE_TIMEOUT_MS,
+    );
   } catch {
     /* daemon down/slow → swallow; the auto-write hook must never break shutdown */
   }

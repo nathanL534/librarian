@@ -149,6 +149,8 @@ export async function runDaemon(): Promise<void> {
     ingest(db, config).catch(() => undefined);
   }, MAINTENANCE_INTERVAL_MS);
 
+  let captureInFlight = false;
+
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     // A client that aborts mid-write (e.g. after a 413) must NOT crash the daemon.
     req.on("error", () => undefined);
@@ -211,6 +213,11 @@ export async function runDaemon(): Promise<void> {
         }
         send(202, { accepted: true }); // never make the hook wait on extraction
         if (!transcriptPath) return;
+        if (captureInFlight) {
+          log(`capture: dropping overlapping request for ${transcriptPath}`);
+          return;
+        }
+        captureInFlight = true;
         const t0 = Date.now();
         void runCapture(transcriptPath, config)
           .then(({ queued }) => {
@@ -224,7 +231,10 @@ export async function runDaemon(): Promise<void> {
             );
             log(`capture: queued ${queued.length} fact(s) from ${transcriptPath}`);
           })
-          .catch((e) => log(`capture error: ${(e as Error).message}`));
+          .catch((e) => log(`capture error: ${(e as Error).message}`))
+          .finally(() => {
+            captureInFlight = false;
+          });
       });
       return;
     }

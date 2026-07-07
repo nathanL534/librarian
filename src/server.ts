@@ -31,6 +31,18 @@ import {
   proposeMemorySmart,
 } from "./client.js";
 
+const HOOK_SUBCOMMANDS = new Set(["inject", "capture"]);
+const isHookSubcommand = HOOK_SUBCOMMANDS.has(process.argv[2] ?? "");
+
+function installSilentHookGuard(): void {
+  process.exitCode = 0;
+  process.stderr.write = (() => true) as typeof process.stderr.write;
+  process.on("uncaughtException", () => process.exit(0));
+  process.on("unhandledRejection", () => process.exit(0));
+}
+
+if (isHookSubcommand) installSilentHookGuard();
+
 const server = new Server(
   { name: "librarian", version: "0.1.0" },
   { capabilities: { tools: {} } },
@@ -212,7 +224,7 @@ async function main(): Promise<void> {
         const ctx = await Promise.race([
           injectSmart(prompt),
           new Promise<string>((r) => {
-            deadline = setTimeout(() => r(""), 24000);
+            deadline = setTimeout(() => r(""), 2600);
           }),
         ]).finally(() => clearTimeout(deadline));
         if (ctx.trim()) {
@@ -251,7 +263,7 @@ async function main(): Promise<void> {
         await Promise.race([
           captureSmart(transcriptPath),
           new Promise<void>((r) => {
-            deadline = setTimeout(() => r(), 3000);
+            deadline = setTimeout(() => r(), 1000);
           }),
         ]).finally(() => clearTimeout(deadline));
       } catch {
@@ -265,7 +277,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  if (process.argv[2] === "inject" || process.argv[2] === "capture") {
+  if (isHookSubcommand) {
     process.exit(0);
   }
   console.error("Fatal error in librarian:", err);
