@@ -168,6 +168,14 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (sub === "digest") {
+    // Promote reviewed pending facts into durable topic notes. Default is dry-run;
+    // writes happen only with --apply.
+    const { runDigest } = await import("./commands/digest.js");
+    await runDigest();
+    return;
+  }
+
   if (sub === "daemon-status") {
     const { daemonHealth } = await import("./client.js");
     const health = await daemonHealth();
