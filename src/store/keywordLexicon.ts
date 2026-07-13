@@ -157,8 +157,26 @@ function termRegex(term: string): RegExp {
   return new RegExp(`(^|[^\\p{L}\\p{N}_])${escaped}(?=$|[^\\p{L}\\p{N}_])`, "iu");
 }
 
+function proseOnly(text: string): string {
+  return text
+    .split(/(\s+)/)
+    .map((token) => {
+      if (/^\s+$/.test(token)) return token;
+      // Paths and URLs are machine context, not intentional prose mentions.
+      if (
+        /[\\/]/.test(token) ||
+        /^(?:[a-z][a-z\d+.-]*:|~[\\/])/i.test(token) ||
+        /\.[a-z\d]{1,8}(?:[?#].*)?[,;:)]?$/i.test(token)
+      ) {
+        return "";
+      }
+      return token;
+    })
+    .join("");
+}
+
 function textHasTerm(text: string, term: string): boolean {
-  return termRegex(term).test(text);
+  return termRegex(term).test(proseOnly(text));
 }
 
 export function findKeywordOverride(

@@ -31,9 +31,18 @@ export interface RawContext {
 // far too loose (95% fire-rate → injecting on everything + confabulating). 0.55 only
 // fires when a chunk is genuinely on-topic. Tune up if it still fires on noise.
 const MIN_RELEVANCE = 0.55;
+const PSEUDO_PROMPT_PREFIX = 512;
+
+function isHarnessPseudoPrompt(query: string): boolean {
+  return /<(?:task-notification|system-reminder|local-command-caveat)>/i.test(
+    query.slice(0, PSEUDO_PROMPT_PREFIX),
+  );
+}
 
 export async function retrieveContext(query: string, k = 5): Promise<RawContext> {
   if (!query.trim()) return { context: "", sources: [] };
+  // Harness notifications can contain repository paths and are not user prompts.
+  if (isHarnessPseudoPrompt(query)) return { context: "", sources: [] };
 
   const config = loadConfig();
   const db = getDb(config);
