@@ -16,11 +16,14 @@ import { loadConfig } from "../config.js";
 import { getDb } from "../db.js";
 import { runtime } from "../runtime.js";
 import { ingest } from "../store/ingest.js";
+import { findKeywordOverride } from "../store/keywordLexicon.js";
 import { retrieve } from "../store/retrieve.js";
 
 export interface RawContext {
   context: string;
   sources: string[];
+  keywordOverride?: boolean;
+  matchedTerms?: string[];
 }
 
 // bge-small cosine: genuine personal-context questions score ~0.55-0.73; unrelated
@@ -35,6 +38,16 @@ export async function retrieveContext(query: string, k = 5): Promise<RawContext>
   const config = loadConfig();
   const db = getDb(config);
   if (!runtime.managedIngest) await ingest(db, config);
+
+  const keywordHit = findKeywordOverride(db, config, query);
+  if (keywordHit) {
+    return {
+      context: keywordHit.context,
+      sources: keywordHit.sources,
+      keywordOverride: true,
+      matchedTerms: keywordHit.terms,
+    };
+  }
 
   const hits = (await retrieve(db, config, query, k)).filter(
     (r) => r.similarity >= MIN_RELEVANCE,

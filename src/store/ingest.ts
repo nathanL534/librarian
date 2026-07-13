@@ -12,6 +12,7 @@ import type { Config } from "../config.js";
 import { toFloat32, type DB } from "../db.js";
 import { chunkMarkdown } from "../chunk.js";
 import { embed } from "../embed.js";
+import { refreshKeywordLexicon } from "./keywordLexicon.js";
 
 function listMarkdown(dir: string): string[] {
   const out: string[] = [];
@@ -44,6 +45,7 @@ export async function ingest(
   db: DB,
   config: Config,
 ): Promise<{ files: number; added: number; removed: number }> {
+  refreshKeywordLexicon(config);
   const files = listMarkdown(config.corpusPath);
   let added = 0;
   let removed = 0;
