@@ -16,7 +16,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { type Interface, createInterface } from "node:readline";
 
 const MAX_TURNS = 8;
-const QUERY_TIMEOUT_MS = 20000;
+const DEFAULT_QUERY_TIMEOUT_MS = 20000;
 const STDERR_KEEP = 500;
 
 interface Pending {
@@ -43,6 +43,12 @@ export class PersistentClaude {
   constructor(
     private readonly model: string,
     private readonly systemPrompt: string,
+    /**
+     * Per-turn deadline. The default suits interactive paths (inject/query),
+     * which must fail fast; batch callers with large prompts (digest) pass a
+     * larger budget instead of inheriting the interactive cap.
+     */
+    private readonly queryTimeoutMs: number = DEFAULT_QUERY_TIMEOUT_MS,
   ) {}
 
   /** Serialized: each query waits for the previous turn to settle. */
@@ -149,7 +155,7 @@ export class PersistentClaude {
       const child = this.ensureStarted();
       const timer = setTimeout(
         () => this.teardown(new Error("claude query timeout")),
-        QUERY_TIMEOUT_MS,
+        this.queryTimeoutMs,
       );
       this.pending = { resolve, reject, timer };
       this.turns++;

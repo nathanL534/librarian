@@ -26,6 +26,10 @@ import { ingest } from "../store/ingest.js";
 const DUP_THRESHOLD = 0.9;
 const DEFAULT_MAX_FACTS = 200;
 const MAX_TOPIC_CONTEXT_CHARS = 18_000;
+// Digest prompts carry up to MAX_TOPIC_CONTEXT_CHARS of topic text plus a full
+// fact batch, so a synthesis turn can legitimately run far past the interactive
+// 20s PersistentClaude default. Give each per-topic turn its own batch budget.
+const DIGEST_QUERY_TIMEOUT_MS = 120_000;
 
 const DIGEST_SYSTEM_PROMPT =
   "You are the user's personal librarian. You merge reviewed raw facts into " +
@@ -319,7 +323,11 @@ async function synthesizeGroups(
   );
   if (groups.length === 0) return groups;
 
-  const claude = new PersistentClaude(config.model, DIGEST_SYSTEM_PROMPT);
+  const claude = new PersistentClaude(
+    config.model,
+    DIGEST_SYSTEM_PROMPT,
+    DIGEST_QUERY_TIMEOUT_MS,
+  );
   try {
     for (const group of groups) {
       group.proposal = cleanProposal(
