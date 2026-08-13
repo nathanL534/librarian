@@ -21,6 +21,7 @@ interface ChunkRow {
   content: string;
 }
 
+// Returns a Claude-synthesized answer plus "— sources: file1.md, file2.md" footer.
 export async function getContext(query: string): Promise<string> {
   if (!query.trim()) return "get_context: empty query.";
 
