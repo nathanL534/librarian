@@ -14,6 +14,10 @@ import { loadConfig } from "./config.js";
 const DAEMON_TIMEOUT_MS = 22000;
 // Hook calls must degrade invisibly instead of holding Claude Code hostage when
 // the daemon socket accepts slowly or the daemon is saturated.
+// COUPLED: the daemon's inject path bounds its own work to fit inside this
+// budget (SYNTHESIS_DEADLINE_MS in tools/injectContext.ts, 1800ms) — an answer
+// finished after this timeout is written to a dead socket and silently lost.
+// If you shrink this, shrink that deadline too.
 const HOOK_INJECT_TIMEOUT_MS = 2500;
 const HOOK_CAPTURE_TIMEOUT_MS = 750;
 

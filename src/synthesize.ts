@@ -20,6 +20,16 @@ const SYSTEM_PROMPT =
 
 let persistent: PersistentClaude | null = null;
 
+/**
+ * True when the warm OAuth session has a turn in flight (or queued). A new
+ * query would serialize behind it (persistentClaude.ts) and cannot answer
+ * promptly — deadline-bound callers (the inject hook) should skip synthesis
+ * rather than enqueue. Key-auth calls are independent HTTP requests: never busy.
+ */
+export function synthesizerBusy(config: Config): boolean {
+  return config.auth === "oauth" && (persistent?.busy ?? false);
+}
+
 /** Tear down the warm OAuth session (called on daemon shutdown). */
 export function disposeSynthesizer(): void {
   persistent?.dispose();

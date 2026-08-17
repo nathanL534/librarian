@@ -39,6 +39,12 @@ export class PersistentClaude {
   private pending: Pending | null = null;
   private turns = 0;
   private chain: Promise<unknown> = Promise.resolve();
+  private inFlight = 0;
+
+  /** True while any turn is running or queued (queries are serialized). */
+  get busy(): boolean {
+    return this.inFlight > 0;
+  }
 
   constructor(
     private readonly model: string,
@@ -53,8 +59,12 @@ export class PersistentClaude {
 
   /** Serialized: each query waits for the previous turn to settle. */
   query(userText: string): Promise<string> {
+    this.inFlight++;
     const run = this.chain.then(() => this.runTurn(userText));
     this.chain = run.catch(() => undefined); // never rejects → next query proceeds
+    void run.catch(() => undefined).then(() => {
+      this.inFlight--;
+    });
     return run;
   }
 
