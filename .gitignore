@@ -41,5 +41,9 @@ models/
 # --- Build output ---
 dist/
 
+# --- Local work products (may hold private/job-application material) ---
+output/
+research/
+
 # --- macOS cruft ---
 .DS_Store
