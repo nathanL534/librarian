@@ -35,6 +35,18 @@ export interface Config {
   pidPath: string;
   /** Append-only usage telemetry log (JSONL; one line per request). */
   usagePath: string;
+  /**
+   * The corpus owner's name, used in extraction prompts ("facts about <name>").
+   * Lives in gitignored config.json so no personal name is hardcoded in source.
+   * Empty → prompts say "the user".
+   */
+  userName: string;
+  /**
+   * Seed terms for the keyword-override lexicon (project names, recurring
+   * topics). Lives in gitignored config.json for the same reason. The lexicon
+   * also derives terms from corpus filenames/headings, so this can be empty.
+   */
+  seedTerms: string[];
 }
 
 /** dist/config.js -> packageRoot is one level up. */
@@ -46,6 +58,8 @@ const DEFAULTS = {
   embeddingModel: "Xenova/bge-small-en-v1.5",
   auth: "oauth" as AuthMode,
   loadAllTokenBudget: 100_000,
+  userName: "",
+  seedTerms: [] as string[],
 };
 
 let cached: Config | null = null;
@@ -81,6 +95,10 @@ export function loadConfig(): Config {
     embeddingModel: merged.embeddingModel,
     auth: (process.env.LIBRARIAN_AUTH as AuthMode | undefined) ?? merged.auth,
     loadAllTokenBudget: merged.loadAllTokenBudget,
+    userName: typeof merged.userName === "string" ? merged.userName : "",
+    seedTerms: Array.isArray(merged.seedTerms)
+      ? merged.seedTerms.filter((t): t is string => typeof t === "string")
+      : [],
     runtimeDir,
     socketPath: join(runtimeDir, "daemon.sock"),
     pidPath: join(runtimeDir, "daemon.pid"),

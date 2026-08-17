@@ -30,20 +30,33 @@ const MAX_CONVO_CHARS = 24_000;
 // Defensive cap so a runaway model paragraph can't become one giant "fact".
 const MAX_FACT_CHARS = 300;
 
-const EXTRACTION_SYSTEM_PROMPT =
-  "You extract durable facts about the user (Nathan) from a conversation " +
-  "transcript between Nathan and an AI assistant. Output ONLY the facts — one " +
-  "per line, terse, no preamble, no numbering, no commentary. A durable fact is " +
-  "a stable preference, decision, project, or fact about Nathan's life/work " +
-  "worth remembering long-term. Never output transient task details, code " +
-  "specifics, secrets/credentials, or anything trivial. If there is nothing " +
-  "durable, output nothing at all.";
+// The corpus owner's name comes from gitignored config.json (`userName`) so no
+// personal name is hardcoded in source; unset, the prompts say "the user".
+function describeUser(userName: string): string {
+  return userName ? `the user (${userName})` : "the user";
+}
 
-const EXTRACTION_INSTRUCTION =
-  "From this conversation, extract DURABLE new facts about the user (Nathan) " +
-  "worth remembering long-term — preferences, decisions, projects, facts about " +
-  "their life/work. One fact per line, terse. Skip transient task details, code " +
-  "specifics, secrets, and anything trivial. If nothing durable, output nothing.";
+function extractionSystemPrompt(userName: string): string {
+  const who = describeUser(userName);
+  return (
+    `You extract durable facts about ${who} from a conversation ` +
+    `transcript between ${who} and an AI assistant. Output ONLY the facts — one ` +
+    "per line, terse, no preamble, no numbering, no commentary. A durable fact is " +
+    `a stable preference, decision, project, or fact about the user's life/work ` +
+    "worth remembering long-term. Never output transient task details, code " +
+    "specifics, secrets/credentials, or anything trivial. If there is nothing " +
+    "durable, output nothing at all."
+  );
+}
+
+function extractionInstruction(userName: string): string {
+  return (
+    `From this conversation, extract DURABLE new facts about ${describeUser(userName)} ` +
+    "worth remembering long-term — preferences, decisions, projects, facts about " +
+    "their life/work. One fact per line, terse. Skip transient task details, code " +
+    "specifics, secrets, and anything trivial. If nothing durable, output nothing."
+  );
+}
 
 // One warm extraction session, reused across captures (mirrors synthesize.ts).
 let extractor: PersistentClaude | null = null;
@@ -142,11 +155,14 @@ export async function captureFromTranscript(
   const convo = transcriptToConversation(transcriptPath);
   if (!convo) return [];
   if (!extractor) {
-    extractor = new PersistentClaude(config.model, EXTRACTION_SYSTEM_PROMPT);
+    extractor = new PersistentClaude(
+      config.model,
+      extractionSystemPrompt(config.userName),
+    );
   }
   try {
     const reply = await extractor.query(
-      `${EXTRACTION_INSTRUCTION}\n\nCONVERSATION:\n${convo}`,
+      `${extractionInstruction(config.userName)}\n\nCONVERSATION:\n${convo}`,
     );
     return parseFacts(reply);
   } catch {

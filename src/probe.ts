@@ -27,6 +27,8 @@ const config: Config = {
   embeddingModel: "Xenova/bge-small-en-v1.5",
   auth: "oauth",
   loadAllTokenBudget: 100_000,
+  userName: "Avery Quill",
+  seedTerms: [],
   runtimeDir: join(homedir(), ".librarian"),
   socketPath: join(homedir(), ".librarian", "daemon.sock"),
   pidPath: join(homedir(), ".librarian", "daemon.pid"),

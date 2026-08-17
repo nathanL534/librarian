@@ -25,12 +25,10 @@ export interface KeywordOverrideHit {
 let cachedCorpusPath = "";
 let cachedEntries: LexiconEntry[] = [];
 
-// Example seeds matching corpus.example — replace with your own project names.
-const SEEDED_PROJECT_TERMS = [
-  "librarian",
-  "tidewatch",
-  "port meridian",
-];
+// User-specific seed terms (project names, recurring topics) come from the
+// gitignored config.json (`seedTerms`) so no personal terms live in source.
+// Lowercased snapshot of the active config's seeds, for termLooksUseful.
+let seedTermsLower = new Set<string>();
 
 function listMarkdown(dir: string): string[] {
   const out: string[] = [];
@@ -79,7 +77,7 @@ function primaryName(term: string): string {
 function termLooksUseful(term: string): boolean {
   if (term.length < 3 || term.length > 80) return false;
   if (/^\d/.test(term)) return false;
-  if (SEEDED_PROJECT_TERMS.includes(term.toLowerCase())) return true;
+  if (seedTermsLower.has(term.toLowerCase())) return true;
   if (term.includes(" ")) return true;
   return /^[A-Z]/.test(term);
 }
@@ -104,6 +102,8 @@ export function refreshKeywordLexicon(config: Config): void {
   const seen = new Set<string>();
   const files = listMarkdown(config.corpusPath);
   const relFiles = files.map((file) => relative(config.corpusPath, file));
+  const textByRel = new Map<string, string>();
+  seedTermsLower = new Set(config.seedTerms.map((t) => t.toLowerCase()));
 
   for (const file of files) {
     const rel = relative(config.corpusPath, file);
@@ -112,6 +112,7 @@ export function refreshKeywordLexicon(config: Config): void {
     addTerm(entries, seen, base.replace(/[-_]+/g, " "), rel, "file");
 
     const text = readFileSync(file, "utf8");
+    textByRel.set(rel, text);
     for (const line of text.split(/\r?\n/)) {
       const heading = /^(#{1,2})\s+(.+)$/.exec(line);
       if (heading) {
@@ -131,13 +132,16 @@ export function refreshKeywordLexicon(config: Config): void {
     }
   }
 
-  for (const seed of SEEDED_PROJECT_TERMS) {
+  // Attach each configured seed term to the corpus file that actually mentions
+  // it (falling back to the first file), so a seed hit surfaces the right note.
+  for (const seed of config.seedTerms) {
     const filePath =
-      relFiles.find((rel) => rel === "example-note.md") ?? relFiles[0];
+      relFiles.find((rel) => textHasTerm(textByRel.get(rel) ?? "", seed)) ??
+      relFiles[0];
     if (filePath) addTerm(entries, seen, seed, filePath, "chunk");
   }
 
-  // Prefer longer phrases first so "port meridian" wins before "meridian".
+  // Prefer longer phrases first so a two-word phrase wins before its last word.
   cachedEntries = entries.sort((a, b) => b.term.length - a.term.length);
   cachedCorpusPath = config.corpusPath;
 }
