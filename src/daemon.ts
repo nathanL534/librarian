@@ -315,6 +315,22 @@ export async function runDaemon(): Promise<void> {
     send(404, { error: "not found" });
   });
 
+  // Belt-and-braces: handle errors on the RAW connection socket, not just the
+  // req/res pair. A client that connects and dies before (or between) requests
+  // emits 'error' on the Socket itself — unhandled, that throws and kills the
+  // whole daemon (the pre-July crash loop: "Emitted 'error' event on Socket
+  // instance … Error: write EPIPE"). req/res 'error' handlers don't cover it.
+  server.on("connection", (socket) => {
+    socket.on("error", () => socket.destroy());
+  });
+  // Malformed HTTP from a client must tear down that socket only, never the daemon.
+  server.on("clientError", (_err, socket) => {
+    socket.destroy();
+  });
+  // accept()/socket() failures under fd pressure (EMFILE/ENFILE) surface here;
+  // log and keep serving existing connections instead of dying.
+  server.on("error", (err) => log(`server error: ${err.message}`));
+
   server.listen(config.socketPath, () => {
     // Restrict the socket to this user — no other local account can connect.
     try {
