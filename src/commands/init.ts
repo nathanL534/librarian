@@ -278,8 +278,15 @@ function wireHooks(): void {
     log("auto-read hook already present — left as-is");
   } else {
     ups.push({
-      // quote the path so an install dir with spaces still tokenizes correctly
-      hooks: [{ type: "command", command: `node "${SERVER_ENTRY}" inject` }],
+      // `env NODE_OPTIONS=` shields the one-shot hook from inherited node
+      // instrumentation (e.g. a terminal wrapper's --require pointing at a tmp
+      // file that gets cleaned): a broken NODE_OPTIONS kills node during
+      // bootstrap, BEFORE our silent-hook guard can install, so the user sees
+      // red hook-error text on every prompt. The hook needs no NODE_OPTIONS.
+      // Quote the path so an install dir with spaces still tokenizes correctly.
+      hooks: [
+        { type: "command", command: `env NODE_OPTIONS= node "${SERVER_ENTRY}" inject` },
+      ],
     });
     log("wired auto-read hook (UserPromptSubmit → inject)");
   }
@@ -290,7 +297,10 @@ function wireHooks(): void {
     log("auto-write hook already present — left as-is");
   } else {
     stop.push({
-      hooks: [{ type: "command", command: `node "${SERVER_ENTRY}" capture` }],
+      // NODE_OPTIONS stripped for the same bootstrap-crash reason as inject.
+      hooks: [
+        { type: "command", command: `env NODE_OPTIONS= node "${SERVER_ENTRY}" capture` },
+      ],
     });
     log("wired auto-write hook (Stop → capture)");
   }
