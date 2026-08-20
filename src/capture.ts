@@ -28,7 +28,9 @@ const DUP_THRESHOLD = 0.9;
 // PersistentClaude turn timeout. The decision-bearing tail is kept (sliced).
 const MAX_CONVO_CHARS = 24_000;
 // Defensive cap so a runaway model paragraph can't become one giant "fact".
-const MAX_FACT_CHARS = 300;
+// 600 (not 300) because voice:/story: lines carry VERBATIM quotes of the
+// user's own sentences — truncating those destroys exactly what they preserve.
+const MAX_FACT_CHARS = 600;
 
 // The corpus owner's name comes from gitignored config.json (`userName`) so no
 // personal name is hardcoded in source; unset, the prompts say "the user".
@@ -36,25 +38,54 @@ function describeUser(userName: string): string {
   return userName ? `the user (${userName})` : "the user";
 }
 
+// The five things worth keeping, shared by both prompts. The corpus is not a
+// project changelog: the user's VOICE, EVENTS, and PERSONAL STORY matter as
+// much as technical facts, and for voice/story the user's exact words are the
+// artifact — paraphrase destroys precisely what those categories preserve.
+function extractionCategories(who: string): string {
+  return (
+    "Prefix every line with exactly one category tag:\n" +
+    `voice: — how ${who} writes and speaks. Phrasing they chose vs rejected, ` +
+    "words/shapes they banned, register preferences, and sentences they " +
+    'authored when writing well. Quote their EXACT words in "double quotes"; ' +
+    "note what was rejected and why when the transcript shows it.\n" +
+    `event: — dated things that happened to ${who}: applications submitted, ` +
+    "interviews, trips, awards, decisions made. Include the date (or the best " +
+    "anchor the transcript gives).\n" +
+    `story: — personal context and origin stories: motivations, feelings ${who} ` +
+    "states about themselves, how they got somewhere. Told in their own words " +
+    "— quote verbatim wherever they said it themselves.\n" +
+    `rule: — standing instructions and durable preferences ("never X", ` +
+    '"always Y", "stop doing Z").\n' +
+    `fact: — durable project, technical, or life facts about ${who}.\n` +
+    "For voice: and story: lines, VERBATIM beats paraphrase — only ever quote " +
+    `words ${who} wrote or explicitly chose, never the assistant's words.`
+  );
+}
+
 function extractionSystemPrompt(userName: string): string {
   const who = describeUser(userName);
   return (
-    `You extract durable facts about ${who} from a conversation ` +
-    `transcript between ${who} and an AI assistant. Output ONLY the facts — one ` +
-    "per line, terse, no preamble, no numbering, no commentary. A durable fact is " +
-    `a stable preference, decision, project, or fact about the user's life/work ` +
-    "worth remembering long-term. Never output transient task details, code " +
-    "specifics, secrets/credentials, or anything trivial. If there is nothing " +
-    "durable, output nothing at all."
+    `You extract durable knowledge about ${who} from a conversation ` +
+    `transcript between ${who} and an AI assistant. Output ONLY the extracted ` +
+    "lines — one per line, no preamble, no numbering, no commentary.\n" +
+    extractionCategories(who) +
+    "\nNever output transient task details, code specifics, " +
+    "secrets/credentials, or anything trivial. If there is nothing durable, " +
+    "output nothing at all."
   );
 }
 
 function extractionInstruction(userName: string): string {
+  const who = describeUser(userName);
   return (
-    `From this conversation, extract DURABLE new facts about ${describeUser(userName)} ` +
-    "worth remembering long-term — preferences, decisions, projects, facts about " +
-    "their life/work. One fact per line, terse. Skip transient task details, code " +
-    "specifics, secrets, and anything trivial. If nothing durable, output nothing."
+    `From this conversation, extract DURABLE new knowledge about ${who} ` +
+    "worth keeping long-term — their voice/style, dated life events, personal " +
+    "stories and feelings, standing rules, and project/technical facts. One " +
+    "item per line, each prefixed with its category tag (voice: / event: / " +
+    "story: / rule: / fact:). Quote the user's exact words for voice: and " +
+    "story: items. Skip transient task details, code specifics, secrets, and " +
+    "anything trivial. If nothing durable, output nothing."
   );
 }
 
