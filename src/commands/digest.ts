@@ -355,7 +355,8 @@ function buildDigestPrompt(topic: TopicFile, facts: PendingFact[]): string {
     "Write a patch-style append proposal as markdown bullets or a short " +
     "subsection for this topic file. Consolidate overlapping facts. Preserve " +
     "specific durable facts, drop transient task chatter, and do not repeat " +
-    "facts already present in the topic note. Return only the markdown to append."
+    "facts already present in the topic note. Return only the markdown to append. " +
+    "If none of the pending facts are durable and new, return exactly NONE."
   );
 }
 
@@ -364,6 +365,21 @@ function cleanProposal(text: string): string {
     .replace(/^```(?:markdown|md)?\s*/i, "")
     .replace(/\s*```$/i, "")
     .trim();
+}
+
+/**
+ * A group whose proposal is the NONE sentinel (or prose to the same effect —
+ * models sometimes explain instead of obeying) merges nothing. Its facts were
+ * still reviewed: apply archives them instead of leaving them at the head of
+ * the pending queue, where --max-facts would re-select the same rejected
+ * lines every run and starve everything behind them.
+ */
+function isRejection(proposal: string): boolean {
+  return (
+    proposal === "" ||
+    /^NONE\b[.!]?$/i.test(proposal) ||
+    /^no (?:durable|new) facts?\b/i.test(proposal)
+  );
 }
 
 function printSummary(input: {
@@ -421,10 +437,16 @@ function applyGroups(groups: TopicGroup[]): PendingFact[] {
   const date = new Date().toISOString().slice(0, 10);
   const merged: PendingFact[] = [];
   for (const group of groups) {
-    if (!group.proposal.trim()) continue;
+    const proposal = group.proposal.trim();
+    if (isRejection(proposal)) {
+      // Reviewed and rejected as non-durable: archive (recoverable, with
+      // provenance) rather than appending commentary or re-cycling the lines.
+      merged.push(...group.facts);
+      continue;
+    }
     const block =
       `\n\n## Digested pending facts - ${date}\n\n` +
-      `${group.proposal.trim()}\n`;
+      `${proposal}\n`;
     appendFileSync(group.topic.full, block, "utf8");
     merged.push(...group.facts);
   }
